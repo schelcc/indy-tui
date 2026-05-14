@@ -1,0 +1,14 @@
+# Build artifacts
+build/*
+
+# Testing artifacts
+*.session
+*.bin
+
+### Editor artifacts
+
+compile_commands.json
+.cache/*
+
+# Emacs
+*~

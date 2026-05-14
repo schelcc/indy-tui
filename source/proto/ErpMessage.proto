@@ -1,0 +1,232 @@
+syntax = "proto2";
+
+package proto.telemetry;
+
+
+option java_outer_classname = "ErpMessageModel";
+
+//Erp message representation for sending message to devices
+message ErpMessage {
+    optional bool isDifferential = 105;
+    optional ErpVersion version = 106;
+    repeated ErpOverallResults overallResults = 100;
+    repeated ErpHeartBeat heartbeats = 101;
+    repeated ErpMessages messages = 102;
+    repeated ErpTelemetry telemetryMessages = 103;
+    repeated ErpEntry entries = 104;
+}
+
+message LeaderBoardColors {
+    optional int32 bestLapSpeed = 1;
+    optional int32 bestLapTime = 2;
+    optional int32 currentPosition = 3;
+    optional int32 positionDelta = 4;
+    optional int32 diffTime = 5;
+    optional int32 gapTime = 6;
+    optional int32 lastLapTime = 7;
+    optional int32 lastLapSpeed = 8;
+}
+
+//Represents $E entry message in ERP protocol
+message ErpEntry {
+    optional ErpHeader header = 1;
+
+    optional string carNumber = 2;
+
+    optional int32 uniqueId = 3;
+
+    optional string driverName = 4;
+
+    optional int32 startPosition = 5;
+
+    optional string division = 6;
+    optional string driverId = 7;
+    optional string transponderNumber = 8;
+    optional string equipment = 9;
+    optional string license = 10;
+    optional string team = 11;
+    optional string teamId = 12;
+    optional string engine = 13;
+    optional string engineId = 14;
+
+    optional int32 competitorId = 15;
+}
+
+//Represents $P telemetry message in ERP protocol.
+/* UPDATED */
+message ErpTelemetry {
+    optional ErpHeader header = 1;
+
+    optional string carNumber = 2;
+
+    optional int32 timeOfDay = 3;
+
+    optional float lapDistance = 4 ;
+    optional float vehicleSpeed = 5;
+
+    optional int32 engineSpeed = 6;
+    optional int32 gear = 7;
+
+    optional float breakPercentage = 8;
+    optional float throttle = 9;
+    optional float steering = 10;
+    optional float longAccel = 11;
+    optional float latAccel = 12;
+    optional float vertAccel = 13;
+    optional float boostPressure = 14;
+
+    optional string tireType = 15;
+
+    optional int32 otEvent = 16;
+    optional int32 otRemain = 17;
+
+    optional bool otStatus = 18;
+
+    optional float gpsAltitude = 19;
+    optional float gpsLat = 20;
+    optional float gpsLong = 21;
+
+    optional bool isInPit = 22;
+
+    optional int32 pctRemain = 23;
+
+    optional bool deployActive = 24;
+    optional bool regenActive = 25;
+}
+
+//Represends $O and $Q overall results message in ERP protocol.
+message ErpOverallResults {
+    optional ErpHeader header = 1;
+    optional bool deleted = 2;
+
+    optional int32 marker = 3;
+    optional int32 rank = 4;
+    optional int32 overallRank = 5;
+    optional int32 startPosition = 6 ;
+
+    optional int64 bestLapTime = 7;
+
+    optional int32 bestLap = 8;
+
+    optional int64 lastLapTime = 9;
+
+    optional int32 laps = 10;
+
+    optional int64 totalTime = 11;
+    optional int64 lastWarmUpQualTime = 12;
+    optional int64 lap1QualTime = 13;
+    optional int64 lap2QualTime = 14;
+    optional int64 lap3QualTime = 15;
+    optional int64 lap4QualTime = 16;
+    optional int64 totalQualTime = 17;
+
+    optional string status = 18;
+    optional string behindLeader = 19;
+    optional string gapPreceding = 20;
+
+    optional bool onTrack = 21;
+
+    optional int32 pitStops = 22;
+    optional int32 lastPitLap = 23;
+    optional int32 sincePitLaps = 24;
+
+    optional string flagStatus = 25;
+    optional string carNumber = 26;
+    optional string firstName = 27;
+    optional string lastName = 28;
+    optional string division = 29;
+    optional string equipment = 30;
+    optional string license = 31;
+    optional string team = 32;
+
+    optional int32 totalEntrantPoints = 33;
+    optional int32 totalDriverPoints = 34;
+
+    optional string comment = 35;
+
+    optional int32 overtakeRemain = 36;
+
+    optional bool overtakeActive = 37;
+
+    optional string tireType = 38;
+    optional string bestSpeed = 39;
+    optional string lastSpeed = 40;
+    optional string averageSpeed = 41;
+
+    optional int32 entrantId = 42;
+    optional int32 teamId = 43;
+    optional int32 driverId = 44;
+    optional int32 rcDriverId = 45;
+    optional int32 totalChassisPoints = 46;
+    optional int32 totalEnginePoints = 47;
+
+    optional bool offTrack = 48;
+
+    optional LeaderBoardColors leaderBoardColors = 49;
+
+    optional string warmUpQualSpeed = 50;
+    optional string lap1QualSpeed = 51;
+    optional string lap2QualSpeed = 52;
+    optional string lap3QualSpeed = 53;
+    optional string lap4QualSpeed = 54;
+
+    optional int32 pctRemain = 56;
+
+    optional bool deployActive = 57;
+    optional bool regenActive = 58;
+
+    optional int32 rankRace = 59;
+
+}
+
+message ErpVersion {
+    optional ErpHeader header = 1;
+    optional int32 major = 2;
+    optional int32 minor = 3;
+    optional string info = 4;
+    optional string erpVersion = 5;
+}
+
+
+//Representation of $X heartbeat message for ERP protocol.
+message ErpHeartBeat {
+    optional ErpHeader header = 1;
+
+    optional string eventName = 2;
+    optional string trackName = 3;
+    optional string trackLength = 4;
+    optional string trackType = 5;
+    optional string greenTime = 6;
+    optional string yellowTime = 7;
+    optional string redTime = 8;
+    optional string currentFlag = 9;
+    optional int64 timeOfRecentFlag = 10;
+    optional string overallTimeToGo = 11;
+    optional string group1TimeToGo = 12;
+    optional string group2TimeToGo = 13;
+    optional int64 dateTime = 14;
+    optional int64 elapsedTime = 15;
+    optional int32 totalLaps = 16;
+    optional int32 completedLaps = 17;
+    optional string series = 18;
+    optional string sessionType = 19;
+    optional string sessionStatus = 20;
+    optional int32 eventId = 21;
+    optional string timeOfDay = 22;
+}
+
+//Represents $M message for ERP protocol.
+message ErpMessages {
+    optional ErpHeader header = 1;
+    optional int64 timeStamp = 2;
+    optional int32 priority = 3;
+    optional string msg = 4;
+}
+
+//ERP protocol header information.
+message ErpHeader {
+    optional string command = 1;
+    optional string typeOfRecord = 2;
+    optional int32 sequenceNumber = 3;
+    optional string preamble = 4;
+}
