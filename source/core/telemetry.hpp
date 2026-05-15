@@ -74,7 +74,7 @@ public:
   [[nodiscard]] size_t accrued_delay() noexcept {
     Tools::LoggedScopedLock lock("accrued_delay() (enq, deq)", _enq_mut,
                                  _deq_mut);
-    if (_read_cursor > _insert_cursor)
+    if ((_read_cursor > _insert_cursor) || (_max_msgs_per_sec.load() == 0))
       return 0;
     else
       return (_insert_cursor - _read_cursor) / _max_msgs_per_sec.load();
@@ -170,6 +170,12 @@ public:
     Tools::Log::Debug("Get delay status", "SESS");
     return _delay_queue.get_delay_status() ==
            TelemetryDelayBuffer::DelayStatus::EXACT;
+  }
+
+  [[nodiscard]] size_t accrued_delay() { return _delay_queue.accrued_delay(); }
+
+  [[nodiscard]] size_t accrued_delay_frames() {
+    return _delay_queue.accrued_delay_frames();
   }
 
 private:
