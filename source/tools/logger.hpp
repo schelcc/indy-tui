@@ -2,6 +2,7 @@
 #include <array>
 #include <mutex>
 #include <print>
+#include <shared_mutex>
 #include <source_location>
 #include <string_view>
 #include <tuple>
@@ -121,6 +122,62 @@ private:
   static void unlock(Muts &...muts) { recursed_unlock(muts...); }
 
   std::tuple<Muts &...> _mutexes;
+  std::string_view _source_ref;
+};
+
+template <Lockable Mut> struct LoggedSharedLock {
+  LoggedSharedLock(std::string_view source_ref, Mut &mut)
+      : _mut(mut), _source_ref(source_ref) {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Block for shared-lock at {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+    _lock = std::shared_lock(_mut);
+#ifndef NDEBUG
+    Log::Debug2(std::format("Shared-lock acquired at {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+  }
+
+  ~LoggedSharedLock() {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Release shared lock for {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+    ~_lock();
+  }
+
+private:
+  Mut &_mut;
+  std::shared_lock<Mut> _lock;
+  std::string_view _source_ref;
+};
+
+template <Lockable Mut> struct LoggedUniqueLock {
+  LoggedUniqueLock(std::string_view source_ref, Mut &mut)
+      : _mut(mut), _source_ref(source_ref) {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Block for unique-lock at {}", _source_ref),
+                "UNIQUE-LOCK");
+#endif
+    _lock = std::unique_lock(mut);
+#ifndef NDEBUG
+    Log::Debug2(std::format("Unique-lock acquired at {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+  }
+
+  ~LoggedUniqueLock() {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Release unique lock for {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+    ~_lock();
+  }
+
+private:
+  Mut &_mut;
+  std::unique_lock<Mut> _lock;
   std::string_view _source_ref;
 };
 
