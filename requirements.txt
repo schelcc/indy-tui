@@ -1,0 +1,1 @@
+libnotcurses++-dev libnotcurses++3 libnotcurses-core-dev libnotcurses-core3 libnotcurses-dev libnotcurses3 notcurses-bin
