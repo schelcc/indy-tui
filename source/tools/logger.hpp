@@ -1,12 +1,23 @@
 #pragma once
 #include <array>
+#include <bit>
+#include <chrono>
+#include <concepts>
+#include <fstream>
 #include <mutex>
+#include <optional>
 #include <print>
+#include <queue>
+#include <semaphore>
 #include <shared_mutex>
 #include <source_location>
 #include <string_view>
+#include <thread>
 #include <tuple>
 #include <type_traits>
+#include <vector>
+
+#include "tools/queue.hpp"
 
 namespace Tools {
 
@@ -22,7 +33,40 @@ public:
   } _level;
 
 private:
-  Log() = default;
+  ThreadSafe::Queue<std::string, 20> _write_queue;
+
+  std::thread _write_thread;
+
+  std::atomic_bool keep_logging{true};
+
+  // std::atomic<double> _log_hz;
+
+  Log() {
+    _write_thread = std::thread{[this] {
+      auto write_out = std::fstream("log.txt");
+      write_out.clear();
+
+      // auto last_write = std::chrono::steady_clock::now();
+
+      while (keep_logging || !_write_queue.empty()) {
+        write_out << _write_queue.dequeue();
+
+        // _log_hz = 1.0 / std::chrono::duration<double, std::ratio<1>>(
+        //                     std::chrono::steady_clock::now() - last_write)
+        //                     .count();
+
+        // last_write = std::chrono::steady_clock::now();
+      }
+
+      write_out.close();
+    }};
+  };
+
+  ~Log() {
+    keep_logging = false;
+
+    _write_thread.join();
+  }
 
   static Log &Get() {
     static Log logger{};
@@ -34,8 +78,9 @@ private:
 
   void log(Level kind, std::string_view msg, std::string_view source = "") {
     if (kind <= _level) {
-      char delim = source.length() > 0 ? ':' : '\0';
-      std::println("[{}{}{}] {}", LEVEL_STR[kind], delim, source, msg);
+      _write_queue.enqueue(std::format("[{}{}{}] {}\n", LEVEL_STR[kind],
+                                       source.length() > 0 ? ':' : ' ', source,
+                                       msg));
     }
   }
 
@@ -65,6 +110,8 @@ public:
   static void Error(std::string_view msg, std::string_view source = "") {
     Get().log(ERROR, msg, source);
   }
+
+  // [[nodiscard]] static double GetWriteRate() { return Get()._log_hz.load(); }
 };
 
 template <typename T>
