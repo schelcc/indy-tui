@@ -1,12 +1,17 @@
 #include "core/telemetry.hpp"
 #include "appsync_resolver.hpp"
 #include "tools/logger.hpp"
+#include <chrono>
 #include <thread>
 
 namespace Telemetry {
 
 void TelemetrySession::start_session() {
-  _running.store(true);
+  _enqueue_running.store(true);
+
+  auto now = std::chrono::steady_clock::now();
+  _last_recv = now;
+  _last_enq = now;
 
   // Dispatch socket, enqueue threads
   _socket_thread = std::thread{[this]() { this->socket_thread(); }};
@@ -15,7 +20,7 @@ void TelemetrySession::start_session() {
 }
 
 void TelemetrySession::start_served_replay_session() {
-  _running.store(true);
+  _enqueue_running.store(true);
 
   _socket_thread =
       std::thread{[this]() { this->socket_thread_served_replay(); }};
@@ -24,9 +29,13 @@ void TelemetrySession::start_served_replay_session() {
 }
 
 void TelemetrySession::end_session() {
-  _running.store(false);
+  _finish.release();
+  _stop_enqueue.release();
+
   _enqueue_thread.join();
+  Tools::Log::Info("Stopped enqueue thread", "WS-MAIN");
   _socket_thread.join();
+  Tools::Log::Info("Stopped socket thread", "WS-MAIN");
 }
 
 void TelemetrySession::socket_thread() {
@@ -70,12 +79,10 @@ void TelemetrySession::socket_thread() {
     }
   });
 
-  _running.store(true);
-
   _socket.start();
 
   // Block until done latch is opened
-  _finish_latch.wait();
+  _finish.acquire();
 
   _socket.close();
 }
@@ -114,37 +121,55 @@ void TelemetrySession::socket_thread_served_replay() {
     }
   });
 
-  _running.store(true);
-
   _socket.start();
 
   // Block until done latch is opened
-  _finish_latch.wait();
+  _finish.acquire();
 
   _socket.close();
 }
 
 void TelemetrySession::enqueue_thread() {
   Tools::Log::Debug("Blocking for start latch", "WS-ENQ");
-  _start_latch.wait();
+  _start.acquire();
   Tools::Log::Debug("Starting worker", "WS-ENQ");
 
-  while (_running.load()) {
-    auto wait_time = get_block_time();
-
-    std::string msg;
-    {
+  // Once we *can* acquire the semaphore, we're done
+  while (!_stop_enqueue.try_acquire()) {
+    if (_recv_sem.try_acquire_until(get_block_time())) {
       Tools::LoggedScopedLock lock("recv_enq, Enqueue worker (recv mut)",
                                    _recv_mut);
-      msg = std::move(_recv_msg);
+      if (!parse_payload(_recv_msg)
+               .and_then([this](std::string_view s) {
+                 return _delay_queue.enqueue(s);
+               })
+               .has_value())
+        Tools::Log::Warn("Failed to enqueue", "WS-ENQ");
+    } else {
+      Tools::Log::Debug("Could not acquire recv mut", "WS-ENQ");
     }
+    // if (_recv_sem.try_acquire_until(wait_time)) {
+    //   Tools::Log::Debug("Acquired recv semaphore", "WS-ENQ");
+    //   std::string msg;
+    //   {
+    //     Tools::LoggedScopedLock lock("recv_enq, Enqueue worker (recv mut)",
+    //                                  _recv_mut);
+    //     msg = std::move(_recv_msg);
+    //   }
 
-    auto payload = parse_payload(msg);
-    if (payload.has_value()) {
-      auto res [[maybe_unused]] = _delay_queue.enqueue(payload.value());
-    }
+    //   auto payload = parse_payload(msg);
+    //   if (payload.has_value()) {
+    //     auto res [[maybe_unused]] = _delay_queue.enqueue(payload.value());
+    //   }
 
-    std::this_thread::sleep_until(wait_time);
+    //   auto now = std::chrono::steady_clock::now();
+    //   _enq_period = now - _last_enq.load();
+    //   _last_enq = now;
+
+    //   std::this_thread::sleep_until(wait_time);
+    // } else {
+    //   Tools::Log::Debug("Failed to acquire recv semaphore", "WS-ENQ");
+    // }
   }
 }
 
@@ -155,24 +180,39 @@ void TelemetrySession::on_open(
     _socket.send(Tools::AppSyncSession::CONN_INIT.data());
   else {
     Tools::Log::Debug("Skipping AppSync setup");
-    _start_latch.count_down();
+    _start.release();
   }
 }
 void TelemetrySession::on_message(const ix::WebSocketMessagePtr &msg) {
   std::string_view msg_str = msg->str;
 
   if (_started) [[likely]] {
-    Tools::LoggedScopedLock lock("recv_enq, Socket worker (recv mut)",
-                                 _recv_mut);
     _recv_msg = msg->str;
+    _recv_sem.release();
+
+    auto now = std::chrono::steady_clock::now();
+    _recv_period = now - _last_recv.load();
+    _last_recv = now;
+
+    if (now > _next_recv_proc.load()) {
+      _recv_sem.release();
+      _next_recv_proc = get_block_time();
+    }
+
   } else [[unlikely]] {
     if (msg_str.contains("\"ka\"")) {
       Tools::Log::Debug("Received initial keep-alive", "WS-SOCKET");
       _socket.send(_appsync_session.get_registration_body());
     } else if (msg_str.contains("\"start_ack\"")) {
       Tools::Log::Debug("Received start ack, starting now...", "WS");
+      auto now = std::chrono::steady_clock::now();
+
+      _last_recv = now;
+      _last_enq = now;
+      _next_recv_proc = get_block_time();
+
       _started = true;
-      _start_latch.count_down();
+      _start.release();
     }
   }
 }

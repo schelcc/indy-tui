@@ -6,6 +6,7 @@
 #include <expected>
 #include <google/protobuf/descriptor.h>
 #include <latch>
+#include <semaphore>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -178,18 +179,40 @@ public:
     return _delay_queue.accrued_delay_frames();
   }
 
+  [[nodiscard]] double get_recv_hz() const {
+    return 1.0 / (_recv_period.load()).count();
+  }
+
+  [[nodiscard]] double get_enq_hz() const {
+    return 1.0 / (_enq_period.load()).count();
+  }
+
 private:
   Tools::AppSyncSession _appsync_session;
   TelemetryDelayBuffer _delay_queue;
 
   ix::WebSocket _socket;
   bool _started;
-  std::atomic_bool _running;
-  std::latch _start_latch{1};
-  std::latch _finish_latch{1};
+
+  std::atomic_bool _enqueue_running;
+
+  std::binary_semaphore _stop_enqueue{0};
+
+  std::binary_semaphore _start{0};
+  std::binary_semaphore _finish{0};
 
   std::mutex _recv_mut;
   std::string _recv_msg;
+  std::binary_semaphore _recv_sem{0};
+  std::atomic<std::chrono::time_point<std::chrono::steady_clock>>
+      _next_recv_proc;
+
+  // Non-limited recv rate
+  std::atomic<std::chrono::time_point<std::chrono::steady_clock>> _last_recv;
+  std::atomic<std::chrono::duration<double, std::ratio<1, 1>>> _recv_period;
+
+  std::atomic<std::chrono::time_point<std::chrono::steady_clock>> _last_enq;
+  std::atomic<std::chrono::duration<double, std::ratio<1, 1>>> _enq_period;
 
   // Threads
   std::thread _enqueue_thread;
