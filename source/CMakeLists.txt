@@ -33,16 +33,9 @@ add_subdirectory(proto)
 if(BUILD_MAIN)
   add_executable(${PROJECT_EXEC} ${SOURCES} client_main.cpp)
 
-  set(Boost_USE_STATIC_LIBS OFF)
-  set(Boost_USE_MULTITHREADED ON)
-  set(Boost_USE_STATIC_RUNTIME OFF)
-
-  include_directories(${Boost_INCLUDE_DIRS})
-
   target_compile_definitions(${PROJECT_EXEC} PRIVATE cxx_std_23)
   target_link_libraries(${PROJECT_EXEC} PUBLIC
     indyproto
-    ${Boost_LIBRARIES}
     ixwebsocket PkgConfig::notcurses
     PkgConfig::notcurses++
   )
