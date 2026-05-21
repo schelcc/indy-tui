@@ -1,8 +1,4 @@
 #pragma once
-#include <boost/beast/core/flat_buffer.hpp>
-#include <boost/beast/http.hpp>
-#include <boost/beast/http/dynamic_body.hpp>
-#include <boost/beast/http/message.hpp>
 #include <string>
 #include <string_view>
 
@@ -15,8 +11,8 @@ struct Response {
   std::string result;
   std::string body;
 
-  Response(boost::beast::http::response<boost::beast::http::dynamic_body> const
-               &resp);
+  Response(int status, std::string_view in_result, std::string_view in_body)
+      : status_code(status), result(in_result), body(in_body) {};
 };
 
 Response get(std::string_view, std::string_view);
