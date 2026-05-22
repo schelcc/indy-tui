@@ -33,6 +33,7 @@ add_subdirectory(proto)
 if(BUILD_MAIN)
   add_executable(${PROJECT_EXEC} ${SOURCES} client_main.cpp)
 
+  target_compile_options(${PROJECT_EXEC} PRIVATE -Werror -Wdangling-reference -Wconversion -Wdangling-pointer -Wmaybe-uninitialized -fanalyzer -ggdb)
   target_compile_definitions(${PROJECT_EXEC} PRIVATE cxx_std_23)
   target_link_libraries(${PROJECT_EXEC} PUBLIC
     indyproto
