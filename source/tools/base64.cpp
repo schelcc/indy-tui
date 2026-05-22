@@ -35,9 +35,9 @@ std::string b64_decode(std::string_view encoded) {
     line = 0;
     line = ((a << 18) | (b << 12) | (c << 6) | d);
 
-    output[str_idx++] = (line & 0xFF0000) >> 16;
-    output[str_idx++] = (line & 0xFF00) >> 8;
-    output[str_idx++] = (line & 0xFF);
+    output[str_idx++] = static_cast<char>((line & 0xFF0000) >> 16);
+    output[str_idx++] = static_cast<char>((line & 0xFF00) >> 8);
+    output[str_idx++] = static_cast<char>(line & 0xFF);
 
     if (enc_iter == enc_end) [[unlikely]]
       break;
@@ -61,7 +61,7 @@ std::string b64_encode(std::string_view input) {
 
   size_t line;
 
-  size_t pad = 0;
+  char pad = 0;
 
   size_t mask_a = 0x3F << 18;
   size_t mask_b = 0x3F << 12;
