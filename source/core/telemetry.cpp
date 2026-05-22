@@ -136,18 +136,14 @@ void TelemetrySession::enqueue_thread() {
 
   // Once we *can* acquire the semaphore, we're done
   while (!_stop_enqueue.try_acquire()) {
-    if (_recv_sem.try_acquire_until(get_block_time())) {
-      Tools::LoggedScopedLock lock("recv_enq, Enqueue worker (recv mut)",
-                                   _recv_mut);
-      if (!parse_payload(_recv_msg)
-               .and_then([this](std::string_view s) {
-                 return _delay_queue.enqueue(s);
-               })
-               .has_value())
-        Tools::Log::Warn("Failed to enqueue", "WS-ENQ");
-    } else {
-      Tools::Log::Debug("Could not acquire recv mut", "WS-ENQ");
-    }
+    _recv_sem.acquire();
+    Tools::LoggedScopedLock lock("recv_enq, Enqueue worker (recv mut)",
+                                 _recv_mut);
+    if (!parse_payload(_recv_msg)
+             .and_then(
+                 [this](std::string_view s) { return _delay_queue.enqueue(s); })
+             .has_value())
+      Tools::Log::Warn("Failed to enqueue", "WS-ENQ");
     // if (_recv_sem.try_acquire_until(wait_time)) {
     //   Tools::Log::Debug("Acquired recv semaphore", "WS-ENQ");
     //   std::string msg;
@@ -188,7 +184,6 @@ void TelemetrySession::on_message(const ix::WebSocketMessagePtr &msg) {
 
   if (_started) [[likely]] {
     _recv_msg = msg->str;
-    _recv_sem.release();
 
     auto now = std::chrono::steady_clock::now();
     _recv_period = now - _last_recv.load();
@@ -197,6 +192,9 @@ void TelemetrySession::on_message(const ix::WebSocketMessagePtr &msg) {
     if (now > _next_recv_proc.load()) {
       _recv_sem.release();
       _next_recv_proc = get_block_time();
+      Tools::Log::Debug("Release enqueue semaphore", "WS-SOCKET");
+    } else {
+      Tools::Log::Debug("Not ready to release enqueue", "WS-SOCKET");
     }
 
   } else [[unlikely]] {

@@ -47,6 +47,8 @@ public:
       return "UNDER";
     case DelayStatus::ERROR:
       return "ERROR";
+    default:
+      return "!MISSING_STR!";
     }
   }
 
