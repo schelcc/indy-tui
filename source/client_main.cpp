@@ -45,6 +45,8 @@ std::string_view evtype_to_str(ncinput in) {
     return "REPEAT";
   case NCTYPE_RELEASE:
     return "RELEASE";
+  default:
+    return "!MISSING_STR!";
   }
 }
 
@@ -56,13 +58,13 @@ struct TelemInfo {
   proto::telemetry::ErpOverallResults results{};
 
   std::string get_line() const {
-    int rank = results.has_overallrank() ? results.overallrank() : 0;
+    // int rank = results.has_overallrank() ? results.overallrank() : 0;
 
     std::string name =
         (results.has_firstname() ? results.firstname() : "Driver") + " " +
         (results.has_lastname() ? results.lastname() : "Name");
 
-    std::string_view num = results.has_carnumber() ? results.carnumber() : "00";
+    std::string num = results.has_carnumber() ? results.carnumber() : "00";
 
     double vehicle_speed =
         telem.has_vehiclespeed() ? telem.vehiclespeed() : 0.0;
@@ -71,21 +73,21 @@ struct TelemInfo {
     double brake_pct =
         telem.has_breakpercentage() ? telem.breakpercentage() : 0.0;
 
-    std::string_view warmupspeed =
+    std::string warmupspeed =
         results.has_warmupqualspeed() ? results.warmupqualspeed() : "000.000";
-    std::string_view lap1speed =
+    std::string lap1speed =
         results.has_lap1qualspeed() ? results.lap1qualspeed() : "000.000";
-    std::string_view lap2speed =
+    std::string lap2speed =
         results.has_lap2qualspeed() ? results.lap2qualspeed() : "000.000";
-    std::string_view lap3speed =
+    std::string lap3speed =
         results.has_lap3qualspeed() ? results.lap3qualspeed() : "000.000";
-    std::string_view lap4speed =
+    std::string lap4speed =
         results.has_lap4qualspeed() ? results.lap4qualspeed() : "000.000";
-    std::string_view averagespeed =
+    std::string averagespeed =
         results.has_averagespeed() ? results.averagespeed() : "000.000";
 
     return std::format(
-        ". {:>20} #{:<2} | {: >8.2f} MPH | {:>6.1f}% | "
+        " {:>20} #{:<2} | {: >8.2f} MPH | {:>6.1f}% | "
         "{:>6.1f}% | "
         "{:>7} MPH | {:>7} MPH | {:>7} MPH | {:>7} MPH | {:>7} "
         "MPH | {:>7} MPH |                                                    ",
@@ -116,20 +118,14 @@ struct BasicLeaderboardWorker {
 
     std::chrono::steady_clock::time_point last_tick;
 
-    bool did_field_render = false;
-
     double render_hz = 0;
-
-    auto switched_speed_str = [](std::string_view s) {
-      return (s.size() > 0) ? s : "000.000";
-    };
 
     last_tick = std::chrono::steady_clock::now();
 
     while (running) {
       auto render_start = std::chrono::steady_clock::now();
 
-      size_t row = 1;
+      int row = 1;
 
       auto block_time = sess.get_block_time();
 
@@ -171,64 +167,69 @@ struct BasicLeaderboardWorker {
       std_plane->putstr(row++, 0, "----------------------------");
 
       auto res = sess.swap_telemetry(std::move(telem_frame));
+      if (telem_frame.IsInitialized()) {
+        // Tools::Log::Debug(telem_frame.DebugString());
 
-      // Info-cache populate
-      auto field_populate_start = std::chrono::steady_clock::now();
+        // Info-cache populate
+        auto field_populate_start = std::chrono::steady_clock::now();
 
-      for (auto iter = telem_frame.mutable_overallresults()->begin();
-           iter < telem_frame.mutable_overallresults()->end(); ++iter) {
-        if (!iter->IsInitialized())
-          continue;
-        std::string_view car_num{iter->carnumber()};
+        for (auto iter = telem_frame.mutable_overallresults()->begin();
+             iter < telem_frame.mutable_overallresults()->end(); ++iter) {
 
-        if (!info_cache.contains(car_num.data())) {
-          info_cache[car_num.data()] = info_vec.size();
-          info_vec.emplace_back(TelemInfo{});
+          if (!iter->IsInitialized())
+            continue;
+          std::string_view car_num{iter->carnumber()};
+
+          if (!info_cache.contains(car_num.data())) {
+            info_cache[car_num.data()] = info_vec.size();
+            info_vec.emplace_back(TelemInfo{});
+          }
+
+          info_vec.at(info_cache.at(car_num.data())).results.Swap(&*iter);
         }
+        telem_frame.clear_overallresults();
 
-        info_vec.at(info_cache.at(car_num.data())).results.Swap(&*iter);
-      }
-      for (auto iter = telem_frame.mutable_telemetrymessages()->begin();
-           iter < telem_frame.mutable_telemetrymessages()->end(); ++iter) {
-        if (!iter->IsInitialized())
-          continue;
-        std::string_view car_num{iter->carnumber()};
-        if (!info_cache.contains(car_num.data())) {
-          info_cache[car_num.data()] = info_vec.size();
-          info_vec.emplace_back(TelemInfo{});
+        for (auto iter = telem_frame.mutable_telemetrymessages()->begin();
+             iter < telem_frame.mutable_telemetrymessages()->end(); ++iter) {
+          if (!iter->IsInitialized())
+            continue;
+          std::string_view car_num{iter->carnumber()};
+          if (!info_cache.contains(car_num.data())) {
+            info_cache[car_num.data()] = info_vec.size();
+            info_vec.emplace_back(TelemInfo{});
+          }
+
+          info_vec.at(info_cache.at(car_num.data())).telem.Swap(&*iter);
         }
+        telem_frame.clear_telemetrymessages();
 
-        info_vec.at(info_cache.at(car_num.data())).telem.Swap(&*iter);
+        field_populate_duration =
+            std::chrono::steady_clock::now() - field_populate_start;
+
+        row++;
+
+        // Draw leaderboard
+        std::vector<TelemInfo> cur_board = info_vec;
+        std::sort(std::begin(cur_board), std::end(cur_board),
+                  [](TelemInfo const &a, TelemInfo const &b) {
+                    // return a.telem.vehiclespeed() < b.telem.vehiclespeed();
+                    return std::stod(a.results.has_averagespeed()
+                                         ? a.results.averagespeed()
+                                         : "0.0") >=
+                           std::stod(b.results.has_averagespeed()
+                                         ? b.results.averagespeed()
+                                         : "0.0");
+                  });
+
+        size_t rank = 0;
+        for (auto const &telem_row : cur_board) {
+          // std_plane->putstr(row++, 0, (std::string{++rank} +
+          // telem_row.get_line()).c_str());
+          std_plane->putstr(
+              row++, 0,
+              std::format("{:>2}.{}", ++rank, telem_row.get_line()).c_str());
+        }
       }
-
-      field_populate_duration =
-          std::chrono::steady_clock::now() - field_populate_start;
-
-      row++;
-
-      // Draw leaderboard
-      did_field_render = false;
-      std::sort(std::begin(info_vec), std::end(info_vec),
-                [](TelemInfo const &a, TelemInfo const &b) {
-                  // return a.telem.vehiclespeed() < b.telem.vehiclespeed();
-                  return std::stod(a.results.has_averagespeed()
-                                       ? a.results.averagespeed()
-                                       : "0.0") <
-                         std::stod(b.results.has_averagespeed()
-                                       ? b.results.averagespeed()
-                                       : "0.0");
-                  // return a.results.overallrank() < b.results.overallrank();
-                });
-
-      size_t rank = 0;
-      for (auto const &telem_row : info_vec) {
-        // std_plane->putstr(row++, 0, (std::string{++rank} +
-        // telem_row.get_line()).c_str());
-        std_plane->putstr(
-            row++, 0,
-            std::format("{}.{}", ++rank, telem_row.get_line()).c_str());
-      }
-
       nc.render();
 
       std_plane->erase();
@@ -379,6 +380,8 @@ struct KeyWorker {
       return has_shift;
     case CTRL:
       return has_ctrl;
+    default:
+      return false;
     }
   }
 
@@ -402,7 +405,8 @@ struct KeyWorker {
     Tools::Log::Debug("Started key worker", "WORKER-INPUT");
     while (running) {
       ncinput in{};
-      uint32_t key_code = nc.get(true, &in);
+
+      nc.get(true, &in);
 
       if (in.evtype == ncpp::EvType::Release) {
         // Release-only events
@@ -436,7 +440,7 @@ int main(int argc, char *argv[]) {
   std::atomic_bool running = true;
   Telemetry::TelemetrySession sess{};
 
-  size_t delay = 2;
+  size_t delay = 10;
   size_t refresh = 10;
 
   std::binary_semaphore end_sem{0};
