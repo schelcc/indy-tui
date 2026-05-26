@@ -49,6 +49,11 @@ int main() {
 
               telem_msg.ParseFromString(Tools::b64_decode(line));
 
+              std::println("Sent w/ TELEM#[{}] OVRRES#[{}] CMPLAP#[{}]",
+                           telem_msg.telemetrymessages_size(),
+                           telem_msg.overallresults_size(),
+                           telem_msg.completedlapresult_size());
+
               if (telem_msg.heartbeats_size() > 0) {
                 auto &hbts_0th = telem_msg.heartbeats().Get(0);
                 Tools::Log::Debug(

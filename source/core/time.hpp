@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core.hpp"
+#include <cassert>
 #include <chrono>
 namespace Time {
 
@@ -24,6 +25,16 @@ using DblMilliSec = std::chrono::duration<double, std::ratio<1, 1000>>;
 template <typename T>
 concept DurationLike = Core::IsOneOf<T, UIntSec, UIntMilliSec, IntSec,
                                      IntMilliSec, DblSec, DblMilliSec>;
+
+/** @brief Calculate the amount of time between TimePoints `newest` and
+ * `oldest`, returning a duration of the given kind. */
+template <DurationLike R>
+[[nodiscard]] static inline R TimeBetween(TimePoint const newest,
+                                          TimePoint const oldest) {
+  assert(newest >= oldest);
+
+  return std::chrono::duration_cast<R>(newest - oldest);
+}
 
 }; // namespace Duration
 

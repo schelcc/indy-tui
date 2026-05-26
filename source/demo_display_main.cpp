@@ -1,6 +1,8 @@
+#include "session.hpp"
 #include "tools/logger.hpp"
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <ncpp/NotCurses.hh>
@@ -8,6 +10,7 @@
 #include <notcurses/nckeys.h>
 #include <notcurses/notcurses.h>
 #include <print>
+#include <string>
 #include <string_view>
 #include <thread>
 
@@ -15,21 +18,50 @@ static constexpr bool BLOCKING = true;
 static constexpr bool NON_BLOCKING = true;
 
 int main() {
-  setlocale(LC_ALL, "");
+  Tools::Log::SetLevel(Tools::Log::DEBUG);
 
-  notcurses_options nc_opts{};
+  Core::Session sess(Core::SessionSource::SERVED_DEBUG);
 
-  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_DRAIN_INPUT;
+  sess.set_delay_sec(2);
 
-  ncpp::NotCurses nc(nc_opts);
-  std::shared_ptr<ncpp::Plane> splane(nc.get_stdplane());
+  auto res = sess.start_session();
+  if (!res.has_value())
+    std::terminate();
 
-  Tools::Log::SetLevel(Tools::Log::NONE);
+  std::atomic_bool running{true};
+  std::jthread output_thread{[&sess, &running] {
+    while (running) {
+      auto next_frame = sess.next_frame();
 
-  ncinput in{};
+      if (next_frame.has_value()) {
+        std::println("Good dequeue");
+      } else {
+        switch (next_frame.error().kind) {
+        case Telemetry::TelemetryQueue::Err::TOO_RECENT:
+          std::println("TOO RECENT: {} / {} ms", sess.get_accrued_delay_ms(),
+                       sess.get_delay_sec().value());
+          break;
+        case Telemetry::TelemetryQueue::Err::LOCK_FAIL:
+          std::println("LOCK FAIL");
+          break;
+        case Telemetry::TelemetryQueue::Err::DELAY_FULL:
+          std::println("DELAY FULL");
+          break;
+        case Telemetry::TelemetryQueue::Err::FRAME_INVALID:
+          std::println("FRAME INVALID");
+          break;
+        }
+      }
+    }
+  }};
 
-  size_t row = 0;
+  size_t v = 0;
+  std::string line;
+  while (std::getline(std::cin, line)) {
+    v++;
+  }
 
-  splane->printf(" <type>: <key/hex> <hex/dec> "
-                 "[Shift,Alt,Ctrl,Super,Hyper,Capslock,Numlock]\n");
+  running = false;
+
+  sess.end_session();
 }

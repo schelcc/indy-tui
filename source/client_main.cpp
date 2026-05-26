@@ -19,7 +19,11 @@
 #include <thread>
 
 #include "ErpMessage.pb.h"
+#include "session.hpp"
 #include "telemetry.hpp"
+#include "telemetry/telemetry_board.hpp"
+#include "telemetry/telemetry_frame.hpp"
+#include "time.hpp"
 #include "tools/appsync_resolver.hpp"
 #include "tools/base64.hpp"
 #include "tools/logger.hpp"
@@ -50,84 +54,29 @@ std::string_view evtype_to_str(ncinput in) {
   }
 }
 
-struct TelemInfo {
-  std::string car_num;
-  std::string driver_name;
-
-  proto::telemetry::ErpTelemetry telem{};
-  proto::telemetry::ErpOverallResults results{};
-
-  std::string get_line() const {
-    // int rank = results.has_overallrank() ? results.overallrank() : 0;
-
-    std::string name =
-        (results.has_firstname() ? results.firstname() : "Driver") + " " +
-        (results.has_lastname() ? results.lastname() : "Name");
-
-    std::string num = results.has_carnumber() ? results.carnumber() : "00";
-
-    double vehicle_speed =
-        telem.has_vehiclespeed() ? telem.vehiclespeed() : 0.0;
-
-    double throttle_pct = telem.has_throttle() ? telem.throttle() : 0.0;
-    double brake_pct =
-        telem.has_breakpercentage() ? telem.breakpercentage() : 0.0;
-
-    std::string warmupspeed =
-        results.has_warmupqualspeed() ? results.warmupqualspeed() : "000.000";
-    std::string lap1speed =
-        results.has_lap1qualspeed() ? results.lap1qualspeed() : "000.000";
-    std::string lap2speed =
-        results.has_lap2qualspeed() ? results.lap2qualspeed() : "000.000";
-    std::string lap3speed =
-        results.has_lap3qualspeed() ? results.lap3qualspeed() : "000.000";
-    std::string lap4speed =
-        results.has_lap4qualspeed() ? results.lap4qualspeed() : "000.000";
-    std::string averagespeed =
-        results.has_averagespeed() ? results.averagespeed() : "000.000";
-
-    return std::format(
-        " {:>20} #{:<2} | {: >8.2f} MPH | {:>6.1f}% | "
-        "{:>6.1f}% | "
-        "{:>7} MPH | {:>7} MPH | {:>7} MPH | {:>7} MPH | {:>7} "
-        "MPH | {:>7} MPH |                                                    ",
-        name, num, vehicle_speed, throttle_pct, brake_pct, warmupspeed,
-        lap1speed, lap2speed, lap3speed, lap4speed, averagespeed);
-  }
-};
-
 struct BasicLeaderboardWorker {
   ncpp::NotCurses &nc;
   std::atomic_bool &running;
-  Telemetry::TelemetrySession &sess;
+  Core::Session &sess;
 
   void operator()() {
     Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
 
-    proto::telemetry::ErpMessage telem_frame{};
-    std::string time_of_day{"00:00:00"};
-
     std::shared_ptr<ncpp::Plane> std_plane(nc.get_stdplane());
 
-    // std::shared_ptr<ncpp::Plane> leaderboard_plane(std_plane);
+    Time::Duration::DblMilliSec field_populate_duration;
+    Time::TimePoint last_tick;
 
-    std::unordered_map<std::string, size_t> info_cache{};
-    std::vector<TelemInfo> info_vec{};
-
-    std::chrono::duration<double, std::ratio<1, 1000>> field_populate_duration;
-
-    std::chrono::steady_clock::time_point last_tick;
+    Telemetry::TelemetryBoard board{};
 
     double render_hz = 0;
 
-    last_tick = std::chrono::steady_clock::now();
+    last_tick = Time::Clock::now();
 
     while (running) {
-      auto render_start = std::chrono::steady_clock::now();
+      auto render_start = Time::Clock::now();
 
       int row = 1;
-
-      auto block_time = sess.get_block_time();
 
       // States printout
       std_plane->putstr(
@@ -142,23 +91,26 @@ struct BasicLeaderboardWorker {
 
       std_plane->putstr(
           row++, 0,
-          std::format("Accrued delay: {}s\t\t\t\t\t", sess.accrued_delay())
+          std::format("Accrued delay: {:.2f}s\t\t\t\t\t",
+                      sess.get_accrued_delay_ms().count() / 1000.0)
               .c_str());
 
-      std_plane->putstr(row++, 0,
-                        std::format("Accrued delay frames: {} frames",
-                                    sess.accrued_delay_frames())
-                            .c_str());
+      // std_plane->putstr(row++, 0,
+      //                   std::format("Accrued delay frames: {} frames",
+      //                               sess.accrued_delay_frames())
+      //                       .c_str());
 
-      std_plane->putstr(row++, 0,
-                        std::format("Raw message recv. rate: {:.2f} Hz\t\t\t\t",
-                                    sess.get_recv_hz())
-                            .c_str());
+      // std_plane->putstr(row++, 0,
+      //                   std::format("Raw message recv. rate: {:.2f}
+      //                   Hz\t\t\t\t",
+      //                               sess.get_recv_hz())
+      //                       .c_str());
 
-      std_plane->putstr(row++, 0,
-                        std::format("Message enqueue rate: {:.2f} Hz\t\t\t\t",
-                                    sess.get_enq_hz())
-                            .c_str());
+      // std_plane->putstr(row++, 0,
+      //                   std::format("Message enqueue rate: {:.2f}
+      //                   Hz\t\t\t\t",
+      //                               sess.get_enq_hz())
+      //                       .c_str());
       // std_plane->putstr(row++, 0,
       //                   std::format("Log write rate: {:.2f} Hz\t\t\t\t",
       //                               Tools::Log::GetWriteRate())
@@ -166,78 +118,23 @@ struct BasicLeaderboardWorker {
 
       std_plane->putstr(row++, 0, "----------------------------");
 
-      auto res = sess.swap_telemetry(std::move(telem_frame));
-      if (telem_frame.IsInitialized()) {
-        // Tools::Log::Debug(telem_frame.DebugString());
-
-        // Info-cache populate
-        auto field_populate_start = std::chrono::steady_clock::now();
-
-        for (auto iter = telem_frame.mutable_overallresults()->begin();
-             iter < telem_frame.mutable_overallresults()->end(); ++iter) {
-
-          if (!iter->IsInitialized())
-            continue;
-          std::string_view car_num{iter->carnumber()};
-
-          if (!info_cache.contains(car_num.data())) {
-            info_cache[car_num.data()] = info_vec.size();
-            info_vec.emplace_back(TelemInfo{});
-          }
-
-          info_vec.at(info_cache.at(car_num.data())).results.Swap(&*iter);
-        }
-        telem_frame.clear_overallresults();
-
-        for (auto iter = telem_frame.mutable_telemetrymessages()->begin();
-             iter < telem_frame.mutable_telemetrymessages()->end(); ++iter) {
-          if (!iter->IsInitialized())
-            continue;
-          std::string_view car_num{iter->carnumber()};
-          if (!info_cache.contains(car_num.data())) {
-            info_cache[car_num.data()] = info_vec.size();
-            info_vec.emplace_back(TelemInfo{});
-          }
-
-          info_vec.at(info_cache.at(car_num.data())).telem.Swap(&*iter);
-        }
-        telem_frame.clear_telemetrymessages();
-
-        field_populate_duration =
-            std::chrono::steady_clock::now() - field_populate_start;
-
-        row++;
-
-        // Draw leaderboard
-        std::vector<TelemInfo> cur_board = info_vec;
-        std::sort(std::begin(cur_board), std::end(cur_board),
-                  [](TelemInfo const &a, TelemInfo const &b) {
-                    // return a.telem.vehiclespeed() < b.telem.vehiclespeed();
-                    return std::stod(a.results.has_averagespeed()
-                                         ? a.results.averagespeed()
-                                         : "0.0") >=
-                           std::stod(b.results.has_averagespeed()
-                                         ? b.results.averagespeed()
-                                         : "0.0");
-                  });
-
-        size_t rank = 0;
-        for (auto const &telem_row : cur_board) {
-          // std_plane->putstr(row++, 0, (std::string{++rank} +
-          // telem_row.get_line()).c_str());
-          std_plane->putstr(
-              row++, 0,
-              std::format("{:>2}.{}", ++rank, telem_row.get_line()).c_str());
+      auto next_frame = sess.next_frame();
+      if (next_frame.has_value()) {
+        if (!board.inform_new_frame(std::move(next_frame.value()))
+                 .has_value()) {
+          Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
+        } else {
+          board.draw_basic(std_plane, row);
         }
       }
+
+      std_plane->putstr(row++, 0, "----------------------------");
+
       nc.render();
 
       std_plane->erase();
 
-      std::this_thread::sleep_until(block_time);
-
-      std::chrono::duration<double, std::ratio<1, 1000>> gap =
-          (std::chrono::steady_clock::now() - render_start);
+      Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
 
       render_hz = 1000.0 / gap.count();
 
@@ -246,7 +143,7 @@ struct BasicLeaderboardWorker {
 
       Tools::Log::Debug(std::format("render_hz: {}", render_hz), "LEADERBOARD");
 
-      last_tick = std::chrono::steady_clock::now();
+      last_tick = Time::Clock::now();
     }
 
     Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
@@ -359,7 +256,7 @@ struct KeyWorker {
   ncpp::NotCurses &nc;
   std::vector<ncpp::NCKey> &key_queue;
   std::atomic_bool &running;
-  Telemetry::TelemetrySession &sess;
+  Core::Session &sess;
   size_t &delay;
   std::binary_semaphore &end_sem;
 
@@ -412,10 +309,10 @@ struct KeyWorker {
         // Release-only events
         if (key_char_is('=', &in, SHIFT)) {
           Tools::Log::Debug("Increase delay requested", "WORKER-INPUT");
-          sess.set_delay(++delay);
+          sess.set_delay_sec(++delay);
         } else if (key_char_is('-', &in)) {
           Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
-          sess.set_delay(delay == 1 ? 1 : --delay);
+          sess.set_delay_sec(delay == 1 ? 1 : --delay);
         } else if (key_char_is('q', &in)) {
           Tools::Log::Debug("Quit requrested", "WORKER-INPUT");
           end_sem.release();
@@ -438,21 +335,20 @@ int main(int argc, char *argv[]) {
   std::vector<ncpp::NCKey> key_queue{};
 
   std::atomic_bool running = true;
-  Telemetry::TelemetrySession sess{};
+  Core::Session sess(Core::SessionSource::SERVED_DEBUG);
 
   size_t delay = 10;
-  size_t refresh = 10;
 
   std::binary_semaphore end_sem{0};
 
   std::atomic_bool change_delay = false;
   std::atomic_size_t new_delay = delay;
 
-  sess.set_refresh(refresh);
-  sess.set_delay(delay);
+  sess.set_delay_sec(delay);
 
   // sess.start_session();
-  sess.start_served_replay_session();
+  if (!sess.start_session())
+    return EXIT_FAILURE;
 
   setlocale(LC_ALL, "");
   notcurses_options nc_opts{};
@@ -474,8 +370,10 @@ int main(int argc, char *argv[]) {
   end_sem.acquire();
 
   running.store(false);
+
   input_thread.join();
   output_thread.join();
+
   sess.end_session();
   Tools::Log::Info("Exiting (graceful)...");
 }

@@ -1,21 +1,11 @@
 #pragma once
 #include <array>
-#include <bit>
-#include <chrono>
-#include <concepts>
 #include <fstream>
 #include <mutex>
-#include <optional>
-#include <print>
-#include <queue>
-#include <semaphore>
 #include <shared_mutex>
-#include <source_location>
 #include <string_view>
 #include <thread>
 #include <tuple>
-#include <type_traits>
-#include <vector>
 
 #include "tools/queue.hpp"
 
@@ -180,6 +170,7 @@ template <Lockable Mut> struct LoggedSharedLock {
                 "SHARED-LOCK");
 #endif
     _lock = std::shared_lock(_mut);
+    _lock.lock();
 #ifndef NDEBUG
     Log::Debug2(std::format("Shared-lock acquired at {}", _source_ref),
                 "SHARED-LOCK");
@@ -191,7 +182,7 @@ template <Lockable Mut> struct LoggedSharedLock {
     Log::Debug2(std::format("Release shared lock for {}", _source_ref),
                 "SHARED-LOCK");
 #endif
-    ~_lock();
+    _lock.unlock();
   }
 
 private:
@@ -208,6 +199,7 @@ template <Lockable Mut> struct LoggedUniqueLock {
                 "UNIQUE-LOCK");
 #endif
     _lock = std::unique_lock(mut);
+    _lock.lock;
 #ifndef NDEBUG
     Log::Debug2(std::format("Unique-lock acquired at {}", _source_ref),
                 "SHARED-LOCK");
@@ -219,7 +211,7 @@ template <Lockable Mut> struct LoggedUniqueLock {
     Log::Debug2(std::format("Release unique lock for {}", _source_ref),
                 "SHARED-LOCK");
 #endif
-    ~_lock();
+    _lock.unlock();
   }
 
 private:

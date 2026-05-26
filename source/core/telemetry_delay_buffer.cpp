@@ -119,8 +119,9 @@ TelemetryDelayBuffer::dequeue(proto::telemetry::ErpMessage &&in_msg) {
 
     Frame &frame = _frames.at(idx);
 
-    if (!frame.valid)
-      return std::unexpected(TelemetryErr::FRAME_INVALID);
+    assert(frame.valid);
+    // if (!frame.valid)
+    //   return std::unexpected(TelemetryErr::FRAME_INVALID);
 
     frame.swap(std::move(in_msg));
     frame.valid = false;

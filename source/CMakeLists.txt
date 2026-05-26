@@ -33,7 +33,7 @@ add_subdirectory(proto)
 if(BUILD_MAIN)
   add_executable(${PROJECT_EXEC} ${SOURCES} client_main.cpp)
 
-  target_compile_options(${PROJECT_EXEC} PRIVATE -Werror -Wdangling-reference -Wconversion -Wdangling-pointer -Wmaybe-uninitialized -fanalyzer -ggdb)
+  target_compile_options(${PROJECT_EXEC} PRIVATE -Werror -Wdangling-reference -Wconversion -Wdangling-pointer -Wmaybe-uninitialized -ggdb)
   target_compile_definitions(${PROJECT_EXEC} PRIVATE cxx_std_23)
   target_link_libraries(${PROJECT_EXEC} PUBLIC
     indyproto
@@ -47,7 +47,7 @@ endif()
 if(BUILD_REPLAY_SERVER)
   add_executable(${REPLAY_SERVER_EXEC} ${SOURCES} replay_server_main.cpp)
   target_compile_definitions(${REPLAY_SERVER_EXEC} PRIVATE cxx_std_23)
-  target_link_libraries(${REPLAY_SERVER_EXEC} PUBLIC indyproto ixwebsocket)
+  target_link_libraries(${REPLAY_SERVER_EXEC} PUBLIC indyproto ixwebsocket PkgConfig::notcurses PkgConfig::notcurses++)
   target_include_directories(${REPLAY_SERVER_EXEC} PUBLIC ${HEADERS})
   set_target_properties(${REPLAY_SERVER_EXEC} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${EXEC_OUT})
 endif()

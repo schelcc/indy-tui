@@ -3,6 +3,7 @@
 #include <atomic>
 #include <optional>
 #include <semaphore>
+#include <utility>
 
 // thread-safe data structures
 namespace ThreadSafe {
@@ -17,7 +18,7 @@ class Queue {
   std::counting_semaphore<Size - 1> _enq_sem{Size - 1};
   std::counting_semaphore<Size - 1> _deq_sem{0};
 
-  std::array<T, Size> _queue{};
+  std::array<T, Size> _queue{T{}};
 
 public:
   void enqueue(T &&t) noexcept
@@ -31,10 +32,10 @@ public:
   }
 
   [[nodiscard]] T dequeue() noexcept {
-    T output;
+
     --_size;
     _deq_sem.acquire();
-    output = std::move(_queue.at(_deq_idx));
+    auto output = std::move(_queue.at(_deq_idx));
     _deq_idx.store(++_deq_idx % Size);
     _enq_sem.release();
     return output;

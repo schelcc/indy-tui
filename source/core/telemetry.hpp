@@ -106,9 +106,7 @@ public:
 
   TelemetryDelayBuffer()
       : _max_msgs_per_sec(20), _delay_s(1), _delay_frames(0),
-        _frames(std::vector<Frame>()) {
-    recalculate_delay();
-  }
+        _frames(std::vector<Frame>()) {}
 
 private:
   /** @brief
@@ -142,6 +140,7 @@ private:
     void populate(std::string_view enc_str) {
       auto decoded = Tools::b64_decode(enc_str);
       msg.ParseFromString(decoded);
+      assert(!msg.IsInitializedWithErrors());
       valid = true;
     };
   };
