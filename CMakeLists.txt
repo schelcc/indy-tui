@@ -16,15 +16,19 @@ set(CMAKE_BUILD_TYPE Debug)
 set(PROJECT_LIB indylib)
 set(PROJECT_EXEC indycpp)
 set(REPLAY_SERVER_EXEC indyreplay)
-set(TESTS_EXEC indytests)
+set(TESTS_EXEC tests)
 set(DISP_DEMO_EXEC demo-display)
 
 set(EXEC_OUT "${CMAKE_CURRENT_SOURCE_DIR}/build/")
 
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/source/")
+set(TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
 
 add_subdirectory(${SOURCE_DIR})
 
+if (BUILD_TESTS)
+  add_subdirectory(${TEST_DIR})
+endif()
 
 # Finally, *always* copy the compile_commands up one
 execute_process(
