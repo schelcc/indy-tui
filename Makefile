@@ -15,7 +15,7 @@ build: base_build
 
 debug: BUILD_TYPE := Debug
 debug: EXTRA_CXX_FLAGS += -Wpedantic -Wconversion -Weffc++
-display_only: EXTRA_CMAKE_FLAGS += -DBUILD_MAIN=ON -DBUILD_REPLAY_SERVER=ON -DBUILD_TESTS=OFF -DBUILD_DISP_DEMO=OFF
+debug: EXTRA_CMAKE_FLAGS += -DBUILD_MAIN=ON -DBUILD_REPLAY_SERVER=ON -DBUILD_TESTS=OFF -DBUILD_DISP_DEMO=OFF
 debug: base_build
 
 display_only: CXX_FLAGS += -Wl,--copy-dt-needed-entries
