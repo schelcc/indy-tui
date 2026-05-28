@@ -42,7 +42,8 @@ private:
 public:
   /** @brief Fill in newly received telemetry information. Returns an expected
    * with the error encountered, if any. */
-  std::expected<void, Err> inform_new_frame(TelemetryFrame &&) noexcept;
+  std::expected<void, Err>
+  inform_new_frame(std::unique_ptr<TelemetryFrame> &&) noexcept;
 
   /** @brief Draw a basic leaderboard noting the drivers' rank, name, number,
    * and current speed. */

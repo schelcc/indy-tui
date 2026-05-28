@@ -98,7 +98,8 @@ public:
   void set_delay_sec(size_t const) noexcept;
 
   /** @brief Retrieve the next relevant frame, if available. */
-  std::expected<Telemetry::TelemetryFrame, Telemetry::TelemetryQueue::Err>
+  std::expected<std::unique_ptr<Telemetry::TelemetryFrame>,
+                Telemetry::TelemetryQueue::Err>
   next_frame() noexcept;
 
   Session(SessionSource source) : _source(source) {}

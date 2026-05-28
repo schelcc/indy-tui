@@ -53,12 +53,12 @@ void TelemetryBoard::reassociate_drivers() noexcept {
   assert(idx == _drivers.size());
 }
 
-std::expected<void, TelemetryBoard::Err>
-TelemetryBoard::inform_new_frame(TelemetryFrame &&frame) noexcept {
-  if (!frame.is_valid())
+std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
+    std::unique_ptr<TelemetryFrame> &&frame) noexcept {
+  if (!frame->is_valid())
     return std::unexpected(Err(TelemetryBoard::Err::FRAME_INVALID));
 
-  ErpMessage message{frame.take_from()};
+  ErpMessage message{frame->take_from()};
 
   // Check whether the driver is in the map, adding it if not. If the carnumber
   // couldn't be found, return false. If successful, return true. Can add in a

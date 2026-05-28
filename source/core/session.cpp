@@ -43,7 +43,8 @@ void Session::set_delay_sec(size_t const delay_s) noexcept {
   _queue.set_delay_sec(delay_s);
 }
 
-std::expected<Telemetry::TelemetryFrame, Telemetry::TelemetryQueue::Err>
+std::expected<std::unique_ptr<Telemetry::TelemetryFrame>,
+              Telemetry::TelemetryQueue::Err>
 Session::next_frame() noexcept {
   return _queue.dequeue();
 }
