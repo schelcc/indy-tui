@@ -1,6 +1,12 @@
 #pragma once
 #include <array>
+#include <atomic>
+#include <cassert>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <ios>
+#include <iostream>
 #include <mutex>
 #include <shared_mutex>
 #include <string_view>
@@ -8,6 +14,7 @@
 #include <tuple>
 
 #include "tools/queue.hpp"
+#include "tools/uuid.hpp"
 
 namespace Tools {
 
@@ -27,33 +34,54 @@ private:
 
   std::thread _write_thread;
 
-  std::atomic_bool keep_logging{true};
+  // std::atomic_bool keep_logging{true};
+  std::atomic_flag keep_logging{true};
 
-  // std::atomic<double> _log_hz;
+  std::mutex _log_out_mtx;
+  std::string_view _log_out;
 
   Log() {
     _write_thread = std::thread{[this] {
-      auto write_out = std::fstream("log.txt");
+      auto tmp_name = "tmp_log_" + uuid() + ".log";
+
+      auto write_out = std::fstream(tmp_name);
+
+      if (!write_out.is_open()) {
+        write_out.clear();
+        write_out.open(tmp_name, std::ios::out);
+        write_out.close();
+        write_out.open(tmp_name);
+      }
+
       write_out.clear();
 
-      // auto last_write = std::chrono::steady_clock::now();
+      size_t flush_count = 0;
 
-      while (keep_logging || !_write_queue.empty()) {
-        write_out << _write_queue.dequeue();
-
-        // _log_hz = 1.0 / std::chrono::duration<double, std::ratio<1>>(
-        //                     std::chrono::steady_clock::now() - last_write)
-        //                     .count();
-
-        // last_write = std::chrono::steady_clock::now();
+      while (keep_logging.test() || !_write_queue.empty()) {
+        auto line = _write_queue.try_dequeue();
+        if (!line.has_value())
+          continue;
+        write_out << line.value();
+        if (flush_count++ % 5 == 0)
+          write_out.flush();
       }
 
       write_out.close();
+
+      {
+        std::scoped_lock lock(_log_out_mtx);
+        try {
+          std::filesystem::rename(tmp_name, _log_out);
+        } catch (std::filesystem::filesystem_error &e) {
+          std::cerr << std::format("Writing log to '{}' failed: {}", _log_out,
+                                   e.what());
+        }
+      }
     }};
   };
 
   ~Log() {
-    keep_logging = false;
+    keep_logging.clear();
 
     _write_thread.join();
   }
@@ -84,6 +112,11 @@ public:
   Log &operator=(Log &&) = delete;
 
   static void SetLevel(Level level) { Get()._level = level; }
+
+  static void SetOut(std::string_view const fname) {
+    std::scoped_lock lock(Get()._log_out_mtx);
+    Get()._log_out = fname;
+  }
 
   static void Info(std::string_view msg, std::string_view source = "") {
     Get().log(INFO, msg, source);

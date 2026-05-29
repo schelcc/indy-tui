@@ -7,6 +7,9 @@ build/*
 *.txt
 bak.*
 
+# Logging artifacts
+*.log
+
 ### Editor artifacts
 
 compile_commands.json

@@ -16,6 +16,7 @@
 
 int main() {
   // https://machinezone.github.io/IXWebSocket/usage/#websocket-server-api
+  Tools::Log::SetOut("indyreplay.log");
 
   int port = 8080;
   std::string_view host{"127.0.0.1"};
@@ -76,6 +77,7 @@ int main() {
 
   auto res = server.listen();
   Tools::Log::Debug("Listening");
+  std::println("Listening");
   if (!res.first)
     return -1;
 
