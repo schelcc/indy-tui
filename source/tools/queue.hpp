@@ -42,11 +42,11 @@ public:
   }
 
   [[nodiscard]] std::optional<T> try_dequeue() noexcept {
-    std::optional<T> output{{}};
+    std::optional<T> output = {};
 
     if (_deq_sem.try_acquire()) {
       --_size;
-      output.emplace(std::move(_queue.at(_deq_idx)));
+      output = std::move(_queue.at(_deq_idx));
       _deq_idx.store(++_deq_idx % Size);
       _enq_sem.release();
     }
@@ -86,7 +86,7 @@ public:
 
   [[nodiscard]] size_t size() const noexcept { return _size.load(); }
 
-  [[nodiscard]] size_t empty() const noexcept { return _size.load() == 0; }
+  [[nodiscard]] bool empty() const noexcept { return _size.load() == 0; }
 };
 
 }; // namespace ThreadSafe
