@@ -32,7 +32,8 @@ add_subdirectory(proto)
 
 add_library(${PROJECT_LIB} ${SOURCES})
 target_include_directories(${PROJECT_LIB} PUBLIC ${HEADERS})
-target_link_libraries(${PROJECT_LIB} PUBLIC indyproto ixwebsocket PkgConfig::notcurses PkgConfig::notcurses++)
+target_link_libraries(${PROJECT_LIB} PUBLIC indyproto ixwebsocket PkgConfig::notcurses PkgConfig::notcurses++ Catch2::Catch2WithMain)
+target_compile_options(${PROJECT_LIB} BEFORE PUBLIC -Wl,--copy-dt-needed-entries)
 
 if(BUILD_MAIN)
   add_executable(${PROJECT_EXEC} ${SOURCES} client_main.cpp)

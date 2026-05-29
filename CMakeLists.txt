@@ -24,6 +24,18 @@ set(EXEC_OUT "${CMAKE_CURRENT_SOURCE_DIR}/build/")
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/source/")
 set(TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/")
 
+Include(FetchContent)
+
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.12.0 
+)
+
+FetchContent_MakeAvailable(Catch2)
+
+list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+
 add_subdirectory(${SOURCE_DIR})
 
 if (BUILD_TESTS)
