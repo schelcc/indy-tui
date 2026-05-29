@@ -5,6 +5,7 @@
 #include "telemetry/telemetry_frame.hpp"
 #include "telemetry/telemetry_queue.hpp"
 #include "time.hpp"
+#include <csignal>
 #include <optional>
 #include <queue>
 #include <string_view>
@@ -40,7 +41,8 @@ Session::get_delay_sec() noexcept {
 }
 
 void Session::set_delay_sec(size_t const delay_s) noexcept {
-  _queue.set_delay_sec(delay_s);
+  if (!_queue.set_delay_sec(delay_s).has_value())
+    Log::Warn(std::format("Attemped invalid delay setting {}", delay_s));
 }
 
 std::expected<std::unique_ptr<Telemetry::TelemetryFrame>,
@@ -62,12 +64,26 @@ void Session::set_callbacks(Session::Status const status,
       case Type::Open:
         on_open(msg);
         break;
-      case ix::WebSocketMessageType::Close:
-        Log::Warn("Unhandled message type 'close' received", "SESS-SOCKET");
+      case ix::WebSocketMessageType::Close: {
+        Log::Info("Session closed by server", "SESS-SOCKET");
+        kill(0, SIGINT);
         break;
-      case ix::WebSocketMessageType::Error:
+      }
+      case ix::WebSocketMessageType::Error: {
         Log::Warn("Unhandled message type 'error' received", "SESS-SOCKET");
+        Log::Debug(std::format("DecompressionError: '{}'",
+                               msg->errorInfo.decompressionError),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("HTTPStatus: '{}'", msg->errorInfo.http_status),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("Reason: '{}'", msg->errorInfo.reason),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("Retries: '{}'", msg->errorInfo.retries),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("WaitTime: '{}'", msg->errorInfo.wait_time),
+                   "SESS-SOCKET-ERR_RECV");
         break;
+      }
       case ix::WebSocketMessageType::Ping:
         Log::Warn("Unhandled message type 'ping' received", "SESS-SOCKET");
         break;
@@ -90,12 +106,26 @@ void Session::set_callbacks(Session::Status const status,
       case Type::Open:
         on_open(msg);
         break;
-      case ix::WebSocketMessageType::Close:
-        Log::Warn("Unhandled message type 'close' received", "SESS-SOCKET");
+      case ix::WebSocketMessageType::Close: {
+        Log::Info("Session closed by server", "SESS-SOCKET");
+        kill(0, SIGINT);
         break;
-      case ix::WebSocketMessageType::Error:
+      }
+      case ix::WebSocketMessageType::Error: {
         Log::Warn("Unhandled message type 'error' received", "SESS-SOCKET");
+        Log::Debug(std::format("DecompressionError: '{}'",
+                               msg->errorInfo.decompressionError),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("HTTPStatus: '{}'", msg->errorInfo.http_status),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("Reason: '{}'", msg->errorInfo.reason),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("Retries: '{}'", msg->errorInfo.retries),
+                   "SESS-SOCKET-ERR_RECV");
+        Log::Debug(std::format("WaitTime: '{}'", msg->errorInfo.wait_time),
+                   "SESS-SOCKET-ERR_RECV");
         break;
+      }
       case ix::WebSocketMessageType::Ping:
         Log::Warn("Unhandled message type 'ping' received", "SESS-SOCKET");
         break;
@@ -148,6 +178,7 @@ std::expected<void, Session::Err> Session::start_session() noexcept {
     _stop_latch.wait();
 
     Log::Debug("Stopping websocket server", "SESS-SOCKET");
+    _socket->stop();
     _socket->close();
   }});
 
@@ -232,11 +263,16 @@ void Session::on_message(const ix::WebSocketMessagePtr &msg) {
   if (msg->str.empty())
     return;
 
-  auto res = _queue.enqueue(msg->str);
+  auto payload = parse_payload(msg->str);
+  if (!payload.has_value())
+    Log::Warn("Bad payload received", "SESS-ENQ");
+  else {
+    auto res = _queue.enqueue(payload.value());
 
-  if (!res.has_value() &&
-      (res.error().kind != Telemetry::TelemetryQueue::Err::DELAY_FULL))
-    Log::Warn("Unhandled enqueue error!", "SESS-ENQ");
+    if (!res.has_value() &&
+        (res.error().kind != Telemetry::TelemetryQueue::Err::DELAY_FULL))
+      Log::Warn("Unhandled enqueue error!", "SESS-ENQ");
+  }
 };
 
 }; // namespace Core

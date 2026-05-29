@@ -1,22 +1,34 @@
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <google/protobuf/descriptor.h>
 #include <iostream>
+#include <latch>
 #include <limits>
 #include <ncpp/NCKey.hh>
 #include <ncpp/Root.hh>
+#include <notcurses/nckeys.h>
 #include <notcurses/notcurses.h>
 #include <optional>
 #include <print>
 
+#include <condition_variable>
+#include <cstdlib>
+#include <iostream>
 #include <ixwebsocket/IXNetSystem.h>
 #include <ixwebsocket/IXUserAgent.h>
 #include <ixwebsocket/IXWebSocket.h>
+#include <mutex>
 #include <ranges>
 #include <semaphore>
 #include <string>
 #include <thread>
+#include <vector>
+
+#include <signal.h>
 
 #include "ErpMessage.pb.h"
 #include "session.hpp"
@@ -27,6 +39,7 @@
 #include "tools/appsync_resolver.hpp"
 #include "tools/base64.hpp"
 #include "tools/logger.hpp"
+#include "tools/nc_helpers.hpp"
 
 #include <ncpp/NotCurses.hh>
 #include <ncpp/Plane.hh>
@@ -56,7 +69,7 @@ std::string_view evtype_to_str(ncinput in) {
 
 struct BasicLeaderboardWorker {
   ncpp::NotCurses &nc;
-  std::atomic_bool &running;
+  std::atomic_flag &running;
   Core::Session &sess;
 
   void operator()() {
@@ -73,7 +86,7 @@ struct BasicLeaderboardWorker {
 
     last_tick = Time::Clock::now();
 
-    while (running) {
+    while (running.test()) {
       auto render_start = Time::Clock::now();
 
       int row = 1;
@@ -137,11 +150,6 @@ struct BasicLeaderboardWorker {
       Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
 
       render_hz = 1000.0 / gap.count();
-
-      Tools::Log::Debug(std::format("render_duration: {}", gap.count()),
-                        "LEADERBOARD");
-
-      Tools::Log::Debug(std::format("render_hz: {}", render_hz), "LEADERBOARD");
 
       last_tick = Time::Clock::now();
     }
@@ -255,10 +263,9 @@ struct CrudeSpeedboardWorker {
 struct KeyWorker {
   ncpp::NotCurses &nc;
   std::vector<ncpp::NCKey> &key_queue;
-  std::atomic_bool &running;
+  std::atomic_flag &running;
   Core::Session &sess;
   size_t &delay;
-  std::binary_semaphore &end_sem;
 
   enum AllowedModifier {
     NONE,
@@ -288,22 +295,40 @@ struct KeyWorker {
     return (has_modifier(ni, mods) && ...);
   }
 
-  bool key_char_is(const char key, const ncinput *ni) const {
+  bool key_char_is(const wchar_t key, const ncinput *ni) const {
     return ((*ni->utf8 == key) && has_modifier(ni, NONE));
   }
 
   template <typename... Ts>
     requires(std::is_same_v<Ts, AllowedModifier> && ...)
-  bool key_char_is(const char key, const ncinput *ni, const Ts... mods) const {
+  bool key_char_is(const wchar_t key, const ncinput *ni,
+                   const Ts... mods) const {
     return ((*ni->utf8 == key) && (has_modifier(ni, mods) && ...));
   }
 
+  static constexpr struct timespec INPUT_TIMEOUT{.tv_sec = 1, .tv_nsec = 0};
+
   void operator()() {
     Tools::Log::Debug("Started key worker", "WORKER-INPUT");
-    while (running) {
+
+    nc.linesigs_disable();
+
+    while (running.test()) {
       ncinput in{};
 
-      nc.get(true, &in);
+      if (nc.get(&INPUT_TIMEOUT, &in) == 0)
+        continue;
+
+      // clang-format off
+      // Tools::Log::Debug(std::format("UTF8: {}", in.utf8), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("BUILTIN SHIFT: {}", in.shift), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("BUILTIN CTRL: {}", in.ctrl), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("BUILTIN ALT: {}", in.alt), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("EFF. TEXT: {}", in.eff_text), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("PRED. CTRL: {}", ncinput_ctrl_p(&in)), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("PRED. SHIFT: {}", ncinput_shift_p(&in)), "KEY-PRESSED");
+      // Tools::Log::Debug(std::format("PRED. ALT: {}", ncinput_alt_p(&in)), "KEY-PRESSED");
+      // clang-format on
 
       if (in.evtype == ncpp::EvType::Release) {
         // Release-only events
@@ -313,67 +338,101 @@ struct KeyWorker {
         } else if (key_char_is('-', &in)) {
           Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
           sess.set_delay_sec(delay == 1 ? 1 : --delay);
-        } else if (key_char_is('q', &in)) {
+        } else if (key_char_is('q', &in) || (key_char_is('C', &in, CTRL) &&
+                                             !key_char_is('C', &in, SHIFT))) {
           Tools::Log::Debug("Quit requrested", "WORKER-INPUT");
-          end_sem.release();
+          kill(0, SIGINT);
         }
       }
     }
   }
 };
 
+// void sigint_handler(int s) {
+
+// }
+
 int main(int argc, char *argv[]) {
+  Tools::Log::SetOut("indycpp.log");
   Tools::Log::SetLevel(Tools::Log::DEBUG);
 
-  for (int i = 0; i < argc; i++) {
-    Tools::Log::Debug(std::format("Arg. {}: '{}'", i, argv[i]), "MAIN");
-  }
+  // https://thomastrapp.com/blog/signal-handlers-for-multithreaded-cpp/
+  sigset_t sigset;
 
-  // if (strcmp(argv[1], "foo") == 0)
-  //   return EXIT_SUCCESS;
+  sigemptyset(&sigset);
+  sigaddset(&sigset, SIGINT);
+  sigaddset(&sigset, SIGTERM);
+  sigaddset(&sigset, SIGUSR1);
 
+  // Block signals in sigset from being handled by this and all children threads
+  pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
+
+  // std::atomic_bool shutdown_requested{false};
+  // std::mutex sig_cv_mtx;
+  // std::condition_variable sig_cv;
+
+  // std::latch terminate_latch{2};
+
+  // auto sig_shutdown_handler = [&terminate_latch, &sigset] {
+  //   int sig_num = 0;
+
+  //   // Wait for a signal in sigset
+  //   sigwait(&sigset, &sig_num);
+  //   terminate_latch.arrive_and_wait();
+  //   Tools::Log::Debug(std::format("Got signal {}", strsignal(sig_num)),
+  //                     "SIG-HANDLER");
+  //   return;
+  // };
+
+  // std::thread sig_thread = std::thread(sig_shutdown_handler);
+
+  // auto main_worker = [&terminate_latch] {
   std::vector<ncpp::NCKey> key_queue{};
 
-  std::atomic_bool running = true;
+  std::atomic_flag running{true};
   Core::Session sess(Core::SessionSource::SERVED_DEBUG);
 
   size_t delay = 10;
 
-  std::binary_semaphore end_sem{0};
-
-  std::atomic_bool change_delay = false;
-  std::atomic_size_t new_delay = delay;
-
   sess.set_delay_sec(delay);
 
-  // sess.start_session();
   if (!sess.start_session())
     return EXIT_FAILURE;
 
   setlocale(LC_ALL, "");
   notcurses_options nc_opts{};
 
-  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE;
+  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
 
   ncpp::NotCurses nc{nc_opts};
 
   std::thread output_thread{BasicLeaderboardWorker{nc, running, sess}};
-  // std::thread output_thread{TimeOfDayWorker{sess, running}};
-  // std::thread output_thread{TimeLeftWorker{sess, running}};
-  // std::thread output_thread{CrudeSpeedboardWorker{sess, running}};
+  std::thread input_thread{KeyWorker{nc, key_queue, running, sess, delay}};
 
-  std::thread input_thread{
-      KeyWorker{nc, key_queue, running, sess, delay, end_sem}};
+  // terminate_latch.arrive_and_wait();
+  // std::unique_lock lock(sig_cv_mtx);
 
-  std::string input;
+  // sig_cv.wait(lock,
+  //             [&shutdown_requested] { return shutdown_requested.load(); });
 
-  end_sem.acquire();
+  int signum = 0;
+  sigwait(&sigset, &signum);
 
-  running.store(false);
+  running.clear();
 
   input_thread.join();
   output_thread.join();
 
   sess.end_session();
+
+  return EXIT_SUCCESS;
+  // };
+
+  // std::thread main_thread = std::thread(main_worker);
+
+  // sig_thread.join();
+  // main_thread.join();
+
   Tools::Log::Info("Exiting (graceful)...");
+  std::println("Done.");
 }

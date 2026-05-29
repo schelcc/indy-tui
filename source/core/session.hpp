@@ -30,6 +30,7 @@ public:
   struct Err {
     enum Kind {
       SOURCE_INVALID,
+      BAD_PAYLOAD,
     } kind;
   };
 
@@ -59,7 +60,7 @@ private:
   std::latch _start_latch{1};
   std::latch _stop_latch{1};
 
-  std::atomic_bool _running{true};
+  std::atomic_flag _running{true};
 
   std::vector<std::jthread> _threads{};
 
