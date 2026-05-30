@@ -319,17 +319,6 @@ struct KeyWorker {
       if (nc.get(&INPUT_TIMEOUT, &in) == 0)
         continue;
 
-      // clang-format off
-      // Tools::Log::Debug(std::format("UTF8: {}", in.utf8), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("BUILTIN SHIFT: {}", in.shift), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("BUILTIN CTRL: {}", in.ctrl), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("BUILTIN ALT: {}", in.alt), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("EFF. TEXT: {}", in.eff_text), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("PRED. CTRL: {}", ncinput_ctrl_p(&in)), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("PRED. SHIFT: {}", ncinput_shift_p(&in)), "KEY-PRESSED");
-      // Tools::Log::Debug(std::format("PRED. ALT: {}", ncinput_alt_p(&in)), "KEY-PRESSED");
-      // clang-format on
-
       if (in.evtype == ncpp::EvType::Release) {
         // Release-only events
         if (key_char_is('=', &in, SHIFT)) {
