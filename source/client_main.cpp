@@ -31,6 +31,7 @@
 #include <signal.h>
 
 #include "ErpMessage.pb.h"
+#include "app_context.hpp"
 #include "session.hpp"
 #include "telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
@@ -330,52 +331,17 @@ struct KeyWorker {
         } else if (key_char_is('q', &in) || (key_char_is('C', &in, CTRL) &&
                                              !key_char_is('C', &in, SHIFT))) {
           Tools::Log::Debug("Quit requrested", "WORKER-INPUT");
-          kill(0, SIGINT);
+          App::AppContext::Shutdown("Quit requested by user");
         }
       }
     }
   }
 };
 
-// void sigint_handler(int s) {
-
-// }
-
 int main(int argc, char *argv[]) {
   Tools::Log::SetOut("indycpp.log");
   Tools::Log::SetLevel(Tools::Log::DEBUG);
 
-  // https://thomastrapp.com/blog/signal-handlers-for-multithreaded-cpp/
-  sigset_t sigset;
-
-  sigemptyset(&sigset);
-  sigaddset(&sigset, SIGINT);
-  sigaddset(&sigset, SIGTERM);
-  sigaddset(&sigset, SIGUSR1);
-
-  // Block signals in sigset from being handled by this and all children threads
-  pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
-
-  // std::atomic_bool shutdown_requested{false};
-  // std::mutex sig_cv_mtx;
-  // std::condition_variable sig_cv;
-
-  // std::latch terminate_latch{2};
-
-  // auto sig_shutdown_handler = [&terminate_latch, &sigset] {
-  //   int sig_num = 0;
-
-  //   // Wait for a signal in sigset
-  //   sigwait(&sigset, &sig_num);
-  //   terminate_latch.arrive_and_wait();
-  //   Tools::Log::Debug(std::format("Got signal {}", strsignal(sig_num)),
-  //                     "SIG-HANDLER");
-  //   return;
-  // };
-
-  // std::thread sig_thread = std::thread(sig_shutdown_handler);
-
-  // auto main_worker = [&terminate_latch] {
   std::vector<ncpp::NCKey> key_queue{};
 
   std::atomic_flag running{true};
@@ -398,14 +364,12 @@ int main(int argc, char *argv[]) {
   std::thread output_thread{BasicLeaderboardWorker{nc, running, sess}};
   std::thread input_thread{KeyWorker{nc, key_queue, running, sess, delay}};
 
-  // terminate_latch.arrive_and_wait();
-  // std::unique_lock lock(sig_cv_mtx);
-
-  // sig_cv.wait(lock,
-  //             [&shutdown_requested] { return shutdown_requested.load(); });
-
-  int signum = 0;
-  sigwait(&sigset, &signum);
+  App::AppContext::AwaitShutdown();
+  Tools::Log::Info(
+      std::format("Shutdown requested for reason '{}'",
+                  App::AppContext::GetReason().value_or(
+                      "no reason provided -- ungraceful shutdown")),
+      "MAIN");
 
   running.clear();
 
@@ -413,14 +377,6 @@ int main(int argc, char *argv[]) {
   output_thread.join();
 
   sess.end_session();
-
-  return EXIT_SUCCESS;
-  // };
-
-  // std::thread main_thread = std::thread(main_worker);
-
-  // sig_thread.join();
-  // main_thread.join();
 
   Tools::Log::Info("Exiting (graceful)...");
   std::println("Done.");

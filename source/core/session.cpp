@@ -1,4 +1,5 @@
 #include "core/session.hpp"
+#include "app_context.hpp"
 #include "appsync_resolver.hpp"
 #include "ixwebsocket/IXWebSocket.h"
 #include "ixwebsocket/IXWebSocketMessage.h"
@@ -66,7 +67,8 @@ void Session::set_callbacks(Session::Status const status,
         break;
       case ix::WebSocketMessageType::Close: {
         Log::Info("Session closed by server", "SESS-SOCKET");
-        kill(0, SIGINT);
+        App::AppContext::Shutdown("Websocket session closed by server");
+        // kill(0, SIGINT);
         break;
       }
       case ix::WebSocketMessageType::Error: {
@@ -108,7 +110,8 @@ void Session::set_callbacks(Session::Status const status,
         break;
       case ix::WebSocketMessageType::Close: {
         Log::Info("Session closed by server", "SESS-SOCKET");
-        kill(0, SIGINT);
+        App::AppContext::Shutdown("Websocket session closed by server");
+        // kill(0, SIGINT);
         break;
       }
       case ix::WebSocketMessageType::Error: {
