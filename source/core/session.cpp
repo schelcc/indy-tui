@@ -233,8 +233,6 @@ void Session::on_open(const ix::WebSocketMessagePtr &) {
 
   if (_source == SessionSource::SERVED_REMOTE) {
     _socket->send(Tools::AppSyncSession::CONN_INIT.data());
-
-    set_callbacks(Status::STARTED, _socket);
   }
 };
 
