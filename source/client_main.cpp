@@ -22,6 +22,7 @@
 #include <ixwebsocket/IXUserAgent.h>
 #include <ixwebsocket/IXWebSocket.h>
 #include <mutex>
+#include <pthread.h>
 #include <ranges>
 #include <semaphore>
 #include <string>
@@ -32,6 +33,7 @@
 
 #include "ErpMessage.pb.h"
 #include "app_context.hpp"
+#include "core/cli.hpp"
 #include "session.hpp"
 #include "telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
@@ -73,6 +75,9 @@ struct BasicLeaderboardWorker {
   std::atomic_flag &running;
   Core::Session &sess;
 
+  static constexpr Time::Duration::UIntMilliSec MAX_REDRAW_HZ =
+      Time::Duration::UIntMilliSec(100);
+
   void operator()() {
     Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
 
@@ -89,6 +94,7 @@ struct BasicLeaderboardWorker {
 
     while (running.test()) {
       auto render_start = Time::Clock::now();
+      auto block_until = render_start + MAX_REDRAW_HZ;
 
       int row = 1;
 
@@ -105,8 +111,9 @@ struct BasicLeaderboardWorker {
 
       std_plane->putstr(
           row++, 0,
-          std::format("Accrued delay: {:.2f}s\t\t\t\t\t",
-                      sess.get_accrued_delay_ms().count() / 1000.0)
+          std::format("Accrued delay: {:.2f}s / {}s \t\t\t\t\t",
+                      sess.get_accrued_delay_ms().count() / 1000.0,
+                      sess.get_delay_sec().value_or(0))
               .c_str());
 
       // std_plane->putstr(row++, 0,
@@ -137,16 +144,17 @@ struct BasicLeaderboardWorker {
         if (!board.inform_new_frame(std::move(next_frame.value()))
                  .has_value()) {
           Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
-        } else {
-          board.draw_basic(std_plane, row);
         }
       }
+      board.draw_basic(std_plane, row);
 
       std_plane->putstr(row++, 0, "----------------------------");
 
       nc.render();
 
       std_plane->erase();
+
+      std::this_thread::sleep_until(block_until);
 
       Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
 
@@ -307,7 +315,7 @@ struct KeyWorker {
     return ((*ni->utf8 == key) && (has_modifier(ni, mods) && ...));
   }
 
-  static constexpr struct timespec INPUT_TIMEOUT{.tv_sec = 1, .tv_nsec = 0};
+  static constexpr struct timespec INPUT_TIMEOUT{.tv_sec = 5, .tv_nsec = 0};
 
   void operator()() {
     Tools::Log::Debug("Started key worker", "WORKER-INPUT");
@@ -338,14 +346,83 @@ struct KeyWorker {
   }
 };
 
-int main(int argc, char *argv[]) {
+int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   Tools::Log::SetOut("indycpp.log");
   Tools::Log::SetLevel(Tools::Log::DEBUG);
+
+  using namespace CLI;
+
+  Parser parser =
+      Parser()
+          .set_tool_name("indy-tui")
+          .set_desc("A cool little toy for following races from the terminal.");
+
+  parser.add_element<Arg>("mode")
+      .set_help_msg("What mode of operation to use. Options are 'live', "
+                    "'live-debug', and "
+                    "'replay'.")
+      .set_handler([](std::string_view const s) -> Core::SessionSource {
+        if (s == "live")
+          return Core::SessionSource::SERVED_REMOTE;
+        else if (s == "live-debug")
+          return Core::SessionSource::SERVED_DEBUG;
+        else if (s == "replay")
+          return Core::SessionSource::LOCAL_REPLAY;
+        else
+          throw CLI::InputParsingErr(
+              std::format("Invalid input for mode: '{}'", s));
+      });
+
+  parser.add_element<Option>("url")
+      .set_help_msg("What websocket URL to reach for the 'live-debug' mode.")
+      .set_long_opt("url")
+      .set_short_opt("u");
+
+  parser.add_element<Option>("log output")
+      .set_help_msg("Where the log will be written to, if logging is enabled")
+      .set_long_opt("log-out")
+      .set_default_input("indy-tui.log")
+      .set_handler([](std::string_view const s) { return s; });
+
+  parser.add_element<Option>("log level")
+      .set_help_msg(
+          "What level of information to include in the logging, if "
+          "enabled. Options are 'none', 'warn' 'info', 'debug', 'debug2'.")
+      .set_long_opt("log-level")
+      .set_default_input("info")
+      .set_handler([](std::string_view const s) -> Tools::Log::Level {
+        if (s == "none")
+          return Tools::Log::NONE;
+        else if (s == "warn")
+          return Tools::Log::WARN;
+        else if (s == "info")
+          return Tools::Log::INFO;
+        else if (s == "debug")
+          return Tools::Log::DEBUG;
+        else if (s == "debug2")
+          return Tools::Log::DEBUG2;
+        else
+          throw CLI::InputParsingErr(
+              std::format("Invalid input for log level: '{}'", s));
+      });
+
+  parser.finalize();
+
+  try {
+    parser.parse_input(argc, argv);
+  } catch (CLI::InputParsingErr &e) {
+    std::println("Error encountered parsing command line input: {}", e.what());
+    std::println("{}", parser.get_help());
+    return EXIT_FAILURE;
+  }
+
+  Tools::Log::SetOut(parser.get<Option, std::string_view>("log output"));
+  Tools::Log::SetLevel(parser.get<Option, Tools::Log::Level>("log level"));
 
   std::vector<ncpp::NCKey> key_queue{};
 
   std::atomic_flag running{true};
-  Core::Session sess(Core::SessionSource::SERVED_DEBUG);
+  Core::Session sess(parser.get<Arg, Core::SessionSource>("mode"));
 
   size_t delay = 10;
 
@@ -363,6 +440,9 @@ int main(int argc, char *argv[]) {
 
   std::thread output_thread{BasicLeaderboardWorker{nc, running, sess}};
   std::thread input_thread{KeyWorker{nc, key_queue, running, sess, delay}};
+
+  pthread_setname_np(output_thread.native_handle(), "Display");
+  pthread_setname_np(input_thread.native_handle(), "Input");
 
   App::AppContext::AwaitShutdown();
   Tools::Log::Info(
