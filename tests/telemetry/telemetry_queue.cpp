@@ -19,7 +19,8 @@ TEST_CASE("Basic single-threaded telemetry_queue functionality",
   REQUIRE_THAT(queue.get_refresh_hz(),
                ExpIsNotErr() && ExpHasVal(INIT_REFRESH_HZ));
 
-  REQUIRE(queue.get_total_frames() == INIT_DELAY_S * INIT_REFRESH_HZ);
+  REQUIRE(queue.get_total_frames() ==
+          (INIT_DELAY_S * INIT_REFRESH_HZ) + DelayInfo::DELAY_SLOP);
 
   REQUIRE(queue.get_accrued_delay_ms() == Time::Duration::DblMilliSec(0));
 
@@ -35,7 +36,8 @@ TEST_CASE("Basic single-threaded telemetry_queue functionality",
     // Accrued delay should not have changed
     CHECK(queue.get_accrued_delay_ms() == Time::Duration::DblMilliSec(0));
 
-    CHECK(queue.get_total_frames() == new_delay * INIT_REFRESH_HZ);
+    CHECK(queue.get_total_frames() ==
+          (new_delay * INIT_REFRESH_HZ) + DelayInfo::DELAY_SLOP);
   }
 
   SECTION("changing refresh rate resizes queue") {
@@ -49,7 +51,8 @@ TEST_CASE("Basic single-threaded telemetry_queue functionality",
     // Accrued delay should not have changed
     CHECK(queue.get_accrued_delay_ms() == Time::Duration::DblMilliSec(0));
 
-    CHECK(queue.get_total_frames() == INIT_DELAY_S * new_refresh);
+    CHECK(queue.get_total_frames() ==
+          (INIT_DELAY_S * new_refresh) + DelayInfo::DELAY_SLOP);
   }
 
   SECTION("attempting to set the delay too high does not change the queue") {
@@ -62,7 +65,8 @@ TEST_CASE("Basic single-threaded telemetry_queue functionality",
     CHECK_THAT(queue.get_refresh_hz(),
                ExpIsNotErr() && ExpHasVal(INIT_REFRESH_HZ));
 
-    CHECK(queue.get_total_frames() == INIT_REFRESH_HZ * INIT_DELAY_S);
+    CHECK(queue.get_total_frames() ==
+          (INIT_REFRESH_HZ * INIT_DELAY_S) + DelayInfo::DELAY_SLOP);
   }
 
   SECTION("attempting to set the refresh too low does not change the queue") {
@@ -75,6 +79,7 @@ TEST_CASE("Basic single-threaded telemetry_queue functionality",
     CHECK_THAT(queue.get_refresh_hz(),
                ExpIsNotErr() && ExpHasVal(INIT_REFRESH_HZ));
 
-    CHECK(queue.get_total_frames() == INIT_REFRESH_HZ * INIT_DELAY_S);
+    CHECK(queue.get_total_frames() ==
+          (INIT_REFRESH_HZ * INIT_DELAY_S) + DelayInfo::DELAY_SLOP);
   }
 }
