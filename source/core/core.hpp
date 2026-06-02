@@ -8,4 +8,9 @@ namespace Core {
 template <typename T, typename... Ts>
 concept IsOneOf = (std::is_same_v<T, Ts> || ...);
 
+/** @brief Helper to construct visitors for variants. */
+template <typename... Ts> struct Overload : Ts... {
+  using Ts::operator()...;
+};
+
 }; // namespace Core
