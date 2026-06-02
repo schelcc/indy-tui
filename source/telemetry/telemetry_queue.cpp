@@ -104,10 +104,13 @@ TelemetryQueue::enqueue(std::string_view const payload) noexcept {
     cur_frame.frame =
         std::make_unique<TelemetryFrame>(Tools::b64_decode(payload));
 
+    _enq_idx++;
+
     return cur_frame.frame->is_valid()
                ? std::expected<void, TelemetryQueue::Err>{}
                : std::unexpected(Err{Err::FRAME_INVALID});
   } else {
+    Tools::Log::Debug("Enqueue skipped, delay is full", "TELEM-QUEUE");
     return std::unexpected(Err{Err::DELAY_FULL});
   }
 }
@@ -115,15 +118,18 @@ TelemetryQueue::enqueue(std::string_view const payload) noexcept {
 std::expected<std::unique_ptr<TelemetryFrame>, TelemetryQueue::Err>
 TelemetryQueue::dequeue() noexcept {
   assert(_deq_idx <= _enq_idx);
-  if ((_enq_idx - _deq_idx) >= _delay_info.get_delay_frames()) {
+  if ((_enq_idx - _deq_idx) >= _delay_info.get_min_delay_frames()) {
     std::shared_lock full_lock(_frame_mtx);
 
     assert(!_frames.empty());
     auto &cur_frame = _frames.at(_deq_idx % _frames.size());
     std::scoped_lock single_lock(cur_frame.mtx);
 
+    _deq_idx++;
+
     return std::move(cur_frame.frame);
   } else {
+    Tools::Log::Debug("Dequeue skipped, delay is not ready", "TELEM-QUEUE");
     return std::unexpected(Err{Err::TOO_RECENT});
   }
 }

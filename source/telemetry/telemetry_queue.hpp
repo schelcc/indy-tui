@@ -19,6 +19,12 @@ namespace Telemetry {
 /** @brief A simple thread-safe dataclass to group delay information like
  * refresh rate, delay length, and frame period. */
 class DelayInfo {
+public:
+  /** @brief Control the amount of "slop" between exact delay and allowed
+   * dequeue. */
+  static constexpr size_t DELAY_SLOP = 3;
+
+private:
   size_t _delay_s{0};
   size_t _refresh_hz{10};
 
@@ -37,9 +43,9 @@ class DelayInfo {
     assert(_refresh_hz > 0);
 
     if (_delay_s > 0) {
-      _total_frames = _delay_s * _refresh_hz;
+      _total_frames = (_delay_s * _refresh_hz) + DELAY_SLOP;
       _frame_period = Time::Duration::DblMilliSec(
-          static_cast<double>(_refresh_hz) / 1000.0);
+          1000.0 / static_cast<double>(_refresh_hz));
     } else {
       _total_frames = {};
       _frame_period = {};
@@ -87,6 +93,14 @@ public:
   [[nodiscard]] std::optional<size_t> get_delay_frames() {
     std::shared_lock lock(_mtx);
     return _total_frames;
+  }
+
+  /** @brief Get the minimum number of delay frames required to satisfy the
+   * delay. */
+  [[nodiscard]] size_t get_min_delay_frames() {
+    return get_delay_frames()
+        .transform([](size_t n) { return n - DELAY_SLOP; })
+        .value_or(0);
   }
 
   /** @brief Retrieve the delay period in milliseconds, if any. */
