@@ -57,7 +57,7 @@ public:
   template <typename S, typename V>
   [[nodiscard]] std::optional<T>
   try_dequeue_for(std::chrono::duration<S, V> &&d) noexcept {
-    std::optional<T> output{{}};
+    std::optional<T> output{};
 
     if (_deq_sem.try_acquire_for(std::forward<decltype(d)>(d))) {
       --_size;

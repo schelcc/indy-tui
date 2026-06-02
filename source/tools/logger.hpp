@@ -8,11 +8,13 @@
 #include <ios>
 #include <iostream>
 #include <mutex>
+#include <pthread.h>
 #include <shared_mutex>
 #include <string_view>
 #include <thread>
 #include <tuple>
 
+#include "time.hpp"
 #include "tools/queue.hpp"
 #include "tools/uuid.hpp"
 
@@ -41,6 +43,7 @@ private:
   std::string_view _log_out;
 
   Log() {
+
     _write_thread = std::thread{[this] {
       auto tmp_name = "tmp_log_" + uuid() + ".log";
 
@@ -58,11 +61,11 @@ private:
       size_t flush_count = 0;
 
       while (keep_logging.test() || !_write_queue.empty()) {
-        auto line = _write_queue.try_dequeue();
+        auto line = _write_queue.try_dequeue_for(Time::Duration::UIntSec(1));
         if (!line.has_value())
           continue;
         write_out << line.value();
-        if (flush_count++ % 5 == 0)
+        if (flush_count++ % 50 == 0)
           write_out.flush();
       }
 
@@ -78,9 +81,11 @@ private:
         }
       }
     }};
+    pthread_setname_np(_write_thread.native_handle(), "Log writer");
   };
 
   ~Log() {
+
     keep_logging.clear();
 
     _write_thread.join();
@@ -95,6 +100,7 @@ private:
       "NONE", "ERROR", "WARN", "INFO", "DEBUG", "DEBUG-EX"};
 
   void log(Level kind, std::string_view msg, std::string_view source = "") {
+
     if (kind <= _level) {
       _write_queue.enqueue(std::format("[{}{}{}] {}\n", LEVEL_STR[kind],
                                        source.length() > 0 ? ':' : ' ', source,
@@ -114,23 +120,29 @@ public:
   static void SetLevel(Level level) { Get()._level = level; }
 
   static void SetOut(std::string_view const fname) {
+
     std::scoped_lock lock(Get()._log_out_mtx);
     Get()._log_out = fname;
   }
 
   static void Info(std::string_view msg, std::string_view source = "") {
+
     Get().log(INFO, msg, source);
   }
   static void Warn(std::string_view msg, std::string_view source = "") {
+
     Get().log(WARN, msg, source);
   }
   static void Debug(std::string_view msg, std::string_view source = "") {
+
     Get().log(DEBUG, msg, source);
   }
   static void Debug2(std::string_view msg, std::string_view source = "") {
+
     Get().log(DEBUG2, msg, source);
   }
   static void Error(std::string_view msg, std::string_view source = "") {
+
     Get().log(ERROR, msg, source);
   }
 
