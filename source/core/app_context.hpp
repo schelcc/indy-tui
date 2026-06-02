@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <latch>
 #include <mutex>
 #include <optional>
@@ -15,6 +16,7 @@ class AppContext {
   // lock fails then shutdown is in progress elsewhere and the caller need not
   // do anything
   std::mutex _do_shutdown_mtx;
+  std::atomic_flag _can_shut_down{true};
   std::latch _shutdown_latch{1};
 
   std::mutex _reason_mtx;
@@ -42,6 +44,12 @@ public:
   /** @brief Initiate shutdown and provide a reason, releasing any shutdown
    * threads. */
   static void Shutdown(std::string_view const reason) {
+    // Only the first call to shutdown can do anything
+    if (!Get()._can_shut_down.test())
+      return;
+    else
+      Get()._can_shut_down.clear();
+
     {
       std::scoped_lock lock(Get()._reason_mtx);
       Get()._reason = reason;
