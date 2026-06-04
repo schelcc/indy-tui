@@ -63,10 +63,11 @@ void TelemetryQueue::rebuild_delay() noexcept {
 
   // Min delay is 2 for now
   size_t prev_delay_frames = _frames.size();
-  size_t new_delay_frames = _delay_info.get_delay_frames().value_or(2);
+  size_t new_delay_frames =
+      _delay_info.get_delay_frames().value_or(DelayInfo::DELAY_SLOP);
 
   size_t skip_frames = (new_delay_frames < prev_delay_frames)
-                           ? prev_delay_frames - new_delay_frames
+                           ? ((prev_delay_frames - new_delay_frames) - 1)
                            : 0;
 
   std::vector<LockedFrame> new_frames(new_delay_frames);
@@ -78,6 +79,7 @@ void TelemetryQueue::rebuild_delay() noexcept {
   }
 
   _deq_idx += skip_frames;
+  _deq_idx.store(std::min(_deq_idx, _enq_idx));
 
   if (prev_delay_frames > 0) {
     for (size_t copy_idx = _deq_idx; copy_idx < _enq_idx; ++copy_idx) {
@@ -94,7 +96,8 @@ TelemetryQueue::enqueue(std::string_view const payload) noexcept {
   assert(!payload.empty());
   assert(_deq_idx <= _enq_idx);
 
-  if ((_enq_idx - _deq_idx) < _delay_info.get_delay_frames()) {
+  if ((_enq_idx - _deq_idx) <
+      _delay_info.get_delay_frames().value_or(DelayInfo::DELAY_SLOP)) {
     std::shared_lock full_lock(_frame_mtx);
 
     assert(!_frames.empty());
@@ -122,8 +125,13 @@ TelemetryQueue::dequeue() noexcept {
     std::shared_lock full_lock(_frame_mtx);
 
     assert(!_frames.empty());
+
     auto &cur_frame = _frames.at(_deq_idx % _frames.size());
+
     std::scoped_lock single_lock(cur_frame.mtx);
+
+    if (cur_frame.frame == nullptr)
+      return std::unexpected(Err{Err::TOO_RECENT});
 
     _deq_idx++;
 
