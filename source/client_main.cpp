@@ -234,7 +234,7 @@ struct KeyWorker {
           sess.set_delay_sec(++delay);
         } else if (key_char_is('-', &in)) {
           Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
-          sess.set_delay_sec(delay == 1 ? 1 : --delay);
+          sess.set_delay_sec(delay == 0 ? 0 : --delay);
         } else if (key_char_is('q', &in) || (key_char_is('C', &in, CTRL) &&
                                              !key_char_is('C', &in, SHIFT))) {
           Tools::Log::Debug("Quit requrested", "WORKER-INPUT");
@@ -323,7 +323,7 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   std::atomic_flag running{true};
   Core::Session sess(parser.get<Arg, Core::SessionSource>("mode"));
 
-  size_t delay = 10;
+  size_t delay = 2;
 
   sess.set_delay_sec(delay);
 
