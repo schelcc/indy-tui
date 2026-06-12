@@ -36,6 +36,7 @@
 #include "core/cli.hpp"
 #include "session.hpp"
 #include "telemetry.hpp"
+#include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
 #include "telemetry/telemetry_frame.hpp"
 #include "time.hpp"
@@ -92,6 +93,68 @@ struct BasicLeaderboardWorker {
 
     last_tick = Time::Clock::now();
 
+    int margin_left = 2;
+    int margin_right = 0;
+    int margin_top = 6;
+    int margin_bottom = 2;
+
+    std::shared_ptr<ncpp::Plane> board_plane = std::make_shared<ncpp::Plane>(
+        std_plane.get(), std_plane->get_dim_y() - (margin_top + margin_bottom),
+        std_plane->get_dim_x() - (margin_left + margin_right), margin_top,
+        margin_left);
+
+    if (!board.add_column(
+            board_plane, "Rank",
+            [](size_t const row, Telemetry::DriverTelemetry const &d,
+               std::shared_ptr<ncpp::Plane> p) -> void {
+              p->putstr(row, 1, std::format("{:>4}", d.get_rank()).data());
+            }))
+      return;
+
+    if (!board.add_column(
+            board_plane, "Driver Name",
+            [](size_t const row, Telemetry::DriverTelemetry const &d,
+               std::shared_ptr<ncpp::Plane> p) -> void {
+              p->putstr(row, 1, std::format("{:>23}", d.get_name()).data());
+            },
+            23))
+      return;
+
+    if (!board.add_column(
+            board_plane, "Speed",
+            [](size_t const row, Telemetry::DriverTelemetry const &d,
+               std::shared_ptr<ncpp::Plane> p) -> void {
+              p->putstr(row, 1, std::format("{:>08.2f}", d.get_speed()).data());
+            },
+            9))
+      return;
+
+    // std::vector<std::shared_ptr<ncpp::Plane>> column_planes{};
+
+    // const int header_offset = 6;
+
+    // int col_x = 0;
+    // int col_y = header_offset;
+
+    // const int num_rows = 34;
+
+    // // Helper to wrap adding columns
+    // auto add_col = [&column_planes, &col_x, &col_y, num_rows](int const cols)
+    // {
+    //   column_planes.push_back(
+    //       std::make_shared<ncpp::Plane>(num_rows, cols, col_y, col_x));
+    //   col_x += cols;
+    // };
+
+    // // TODO: Add naming to columns
+
+    // // Rank
+    // add_col(4);
+    // // Name
+    // add_col(23);
+    // // Speed
+    // add_col(8);
+
     while (running.test()) {
       auto render_start = Time::Clock::now();
       auto block_until = render_start + MAX_REDRAW_HZ;
@@ -146,7 +209,9 @@ struct BasicLeaderboardWorker {
           Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
         }
       }
-      board.draw_basic(std_plane, row);
+      // board.draw_basic(std_plane, row);
+      board.draw_columns();
+      row += board_plane->get_dim_y();
 
       std_plane->putstr(row++, 0, "----------------------------");
 
@@ -333,7 +398,8 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   setlocale(LC_ALL, "");
   notcurses_options nc_opts{};
 
-  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
+  // nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
+  nc_opts.flags = NCOPTION_NO_QUIT_SIGHANDLERS;
 
   ncpp::NotCurses nc{nc_opts};
 

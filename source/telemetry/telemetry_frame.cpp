@@ -1,14 +1,20 @@
 #include <algorithm>
 #include <cassert>
+#include <execution>
 #include <memory>
 #include <mutex>
+#include <ncpp/CellStyle.hh>
+#include <ncpp/NCBox.hh>
 #include <ncpp/NCKey.hh>
 #include <ncpp/NotCurses.hh>
 #include <ncpp/Plane.hh>
 #include <ncpp/Root.hh>
+#include <notcurses/ncseqs.h>
 #include <notcurses/notcurses.h>
+#include <ranges>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include "telemetry/driver_telemetry.hpp"
@@ -143,5 +149,109 @@ void TelemetryBoard::draw_basic(std::shared_ptr<ncpp::Plane> plane,
                                     .data());
                 });
 }
+
+void TelemetryBoard::draw_columns() {
+
+  // Order drivers by rank
+  {
+    std::unique_lock lock(_driver_vec_mtx);
+    std::sort(std::begin(_drivers), std::end(_drivers),
+              DriverTelemetry::OrderByRank);
+  }
+
+  reassociate_drivers();
+
+  std::shared_lock lock(_column_planes_mtx);
+  auto v = std::views::zip(_column_planes, _columns);
+  std::for_each(std::execution::par, std::begin(v), std::end(v),
+                [&, this](auto plane_col_pair) -> void {
+                  ColumnPlane &col_plane = std::get<0>(plane_col_pair);
+                  ColumnPair &col_pair = std::get<1>(plane_col_pair);
+
+                  std::scoped_lock col_lock(col_plane.mtx);
+                  std::shared_lock driver_lock(_driver_vec_mtx);
+
+                  size_t idx = 0;
+
+                  auto &plane = col_plane.plane;
+                  auto &func = col_pair.func;
+                  auto &name = col_pair.name;
+
+                  plane->perimeter_rounded(ncpp::NCBox::CornerMask,
+                                           plane->get_channels(), 0);
+
+                  plane->putstr(idx++, 1, name.data());
+
+                  // for (unsigned int i = 0; i < plane->get_dim_y(); i++)
+                  //   plane->putwch(idx, i, L'─');
+
+                  std::for_each(std::cbegin(_drivers), std::cend(_drivers),
+                                [this, func, &idx, &plane](auto const &driver) {
+                                  func(idx++, driver, plane);
+                                });
+                });
+}
+
+// std::expected<void, TelemetryBoard::Err>
+// TelemetryBoard::move_column(std::string_view const column_name,
+//                             TelemetryBoard::Direction const dir,
+//                             size_t const steps) {
+//   {
+//     // Avoid unique-locking full columns if the column isn't present
+//     std::shared_lock lock(_columns_mtx);
+//     if (!_column_lookup.contains(column_name))
+//       return std::unexpected(
+//           TelemetryBoard::Err{TelemetryBoard::Err::NO_SUCH_COLUMN});
+//   }
+
+//   {
+//     std::unique_lock lock(_columns_mtx);
+
+//     size_t const target_idx{_column_lookup.at(column_name)};
+
+//     int const dir_mult{(dir == Direction::LEFT) ? -1 : 1};
+
+//     int const dst_idx_int =
+//         static_cast<int>(target_idx) + (dir_mult * static_cast<int>(steps));
+
+//     size_t const dst_idx = static_cast<size_t>(std::max(
+//         0, std::min(static_cast<int>(_columns.size() - 1), dst_idx_int)));
+
+//     assert(dst_idx < _columns.size());
+
+//     std::vector<std::pair<std::string_view, ColumnFunc>> new_columns;
+
+//     // Copy the target column
+//     std::pair<std::string_view, ColumnFunc> target_column =
+//         _columns.at(target_idx);
+
+//     // Move over all elements before the new insertion point
+//     std::move(std::begin(_columns), std::begin(_columns) + dst_idx,
+//               std::back_inserter(new_columns));
+
+//     // Copy over moved column
+//     new_columns.emplace_back(std::move(target_column));
+
+//     // Move over all elements after the insertion point but before the old
+//     point std::move(std::begin(_columns) + dst_idx + 1,
+//               std::begin(_columns) + target_idx,
+//               std::back_inserter(new_columns));
+
+//     // Move over all elements which are after the old point
+//     std::move(std::begin(_columns) + target_idx + 1, std::end(_columns),
+//               std::back_inserter(new_columns));
+
+//     _columns = std::move(new_columns);
+
+//     // Fix the column LUT
+//     size_t idx{0};
+//     std::for_each(std::begin(_columns), std::end(_columns),
+//                   [this, &idx](auto const &column_func_pair) {
+//                     _column_lookup.at(std::get<0>(column_func_pair)) = idx++;
+//                   });
+
+//     return {};
+//   }
+// }
 
 }; // namespace Telemetry
