@@ -24,6 +24,7 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(IXWebSocket)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(notcurses REQUIRED IMPORTED_TARGET notcurses)
 pkg_check_modules(notcurses++ REQUIRED IMPORTED_TARGET notcurses++)
