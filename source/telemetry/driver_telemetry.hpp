@@ -15,7 +15,6 @@ public:
     } kind;
   };
 
-private:
   std::string _car_num;
   proto::telemetry::ErpTelemetry _telemetry{};
   proto::telemetry::ErpOverallResults _results{};

@@ -103,30 +103,13 @@ struct BasicLeaderboardWorker {
         std_plane->get_dim_x() - (margin_left + margin_right), margin_top,
         margin_left);
 
-    if (!board.add_column(
-            board_plane, "Rank",
-            [](size_t const row, Telemetry::DriverTelemetry const &d,
-               std::shared_ptr<ncpp::Plane> p) -> void {
-              p->putstr(row, 1, std::format("{:>4}", d.get_rank()).data());
-            }))
+    if (!board.add_column(board_plane, Columns::Rank{}))
       return;
-
-    if (!board.add_column(
-            board_plane, "Driver Name",
-            [](size_t const row, Telemetry::DriverTelemetry const &d,
-               std::shared_ptr<ncpp::Plane> p) -> void {
-              p->putstr(row, 1, std::format("{:>23}", d.get_name()).data());
-            },
-            23))
+    if (!board.add_column(board_plane, Columns::DriverName{}))
       return;
-
-    if (!board.add_column(
-            board_plane, "Speed",
-            [](size_t const row, Telemetry::DriverTelemetry const &d,
-               std::shared_ptr<ncpp::Plane> p) -> void {
-              p->putstr(row, 1, std::format("{:>08.2f}", d.get_speed()).data());
-            },
-            9))
+    if (!board.add_column(board_plane, Columns::Speed{}))
+      return;
+    if (!board.add_column(board_plane, Columns::Throttle{}))
       return;
 
     // std::vector<std::shared_ptr<ncpp::Plane>> column_planes{};

@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "columns.hpp"
 #include "google/protobuf/repeated_ptr_field.h"
 
 #include <ncpp/Plane.hh>
@@ -50,7 +51,7 @@ private:
 
   struct ColumnPair {
     const std::string_view name;
-    const ColumnFunc func;
+    ColumnFunc func;
   };
 
   struct ColumnPlane {
@@ -91,22 +92,19 @@ private:
 public:
   /** @brief Add new column to the board. Does nothing if column is already
    * added. */
-  template <typename Func>
-    requires std::is_invocable_v<Func, size_t const, DriverTelemetry const &,
-                                 std::shared_ptr<ncpp::Plane>>
+  template <Columns::ColumnKind Col>
   std::expected<void, Err> add_column(std::shared_ptr<ncpp::Plane> base_plane,
-                                      std::string_view const column_name,
-                                      Func &&f, int column_width = 0) {
+                                      Col &&col) {
     {
       // Avoid unique-locking the full columns if the column is already present
       std::shared_lock lock(_columns_mtx);
-      if (_column_lookup.contains(column_name))
+      if (_column_lookup.contains(col.COL_NAME))
         return std::unexpected(Err{Err::COLUMN_EXISTS});
     }
 
     // Make sure column width is no narrower than the column name
-    column_width =
-        std::max(static_cast<int>(column_name.length()), column_width);
+    size_t column_width =
+        std::max(static_cast<int>(col.COL_NAME.length()), col.COL_WIDTH);
 
     // Always add padding for lines
     column_width += 2;
@@ -122,12 +120,12 @@ public:
     }
 
     std::unique_lock lock(_columns_mtx);
-    _column_lookup[column_name] = _columns.size();
+    _column_lookup[col.COL_NAME.data()] = _columns.size();
     _columns.push_back(ColumnPair{
-        column_name,
-        [f = std::move(f)](size_t const row, DriverTelemetry const &d,
-                           std::shared_ptr<ncpp::Plane> plane) {
-          f(row, d, plane);
+        col.COL_NAME,
+        [f = std::move(col)](size_t const row, DriverTelemetry const &d,
+                             std::shared_ptr<ncpp::Plane> plane) mutable {
+          std::invoke(f, row, d, plane);
         }});
     return {};
   }
