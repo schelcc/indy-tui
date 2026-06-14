@@ -1,13 +1,10 @@
 #include <atomic>
 #include <chrono>
-#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+
 #include <google/protobuf/descriptor.h>
-#include <iostream>
-#include <latch>
-#include <limits>
 #include <ncpp/NCKey.hh>
 #include <ncpp/Root.hh>
 #include <notcurses/nckeys.h>
@@ -15,39 +12,28 @@
 #include <optional>
 #include <print>
 
-#include <condition_variable>
 #include <cstdlib>
-#include <iostream>
 #include <ixwebsocket/IXNetSystem.h>
 #include <ixwebsocket/IXUserAgent.h>
 #include <ixwebsocket/IXWebSocket.h>
-#include <mutex>
 #include <pthread.h>
-#include <ranges>
-#include <semaphore>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <signal.h>
-
-#include "ErpMessage.pb.h"
 #include "app_context.hpp"
 #include "core/cli.hpp"
-#include "session.hpp"
-#include "telemetry.hpp"
-#include "telemetry/driver_telemetry.hpp"
+#include "core/columns.hpp"
+#include "core/session.hpp"
+#include "core/time.hpp"
+
 #include "telemetry/telemetry_board.hpp"
-#include "telemetry/telemetry_frame.hpp"
-#include "time.hpp"
+
 #include "tools/appsync_resolver.hpp"
-#include "tools/base64.hpp"
 #include "tools/logger.hpp"
-#include "tools/nc_helpers.hpp"
 
 #include <ncpp/NotCurses.hh>
 #include <ncpp/Plane.hh>
-#include <unordered_map>
 
 using Tools::AppSyncSession;
 
@@ -112,78 +98,11 @@ struct BasicLeaderboardWorker {
     if (!board.add_column(board_plane, Columns::Throttle{}))
       return;
 
-    // std::vector<std::shared_ptr<ncpp::Plane>> column_planes{};
-
-    // const int header_offset = 6;
-
-    // int col_x = 0;
-    // int col_y = header_offset;
-
-    // const int num_rows = 34;
-
-    // // Helper to wrap adding columns
-    // auto add_col = [&column_planes, &col_x, &col_y, num_rows](int const cols)
-    // {
-    //   column_planes.push_back(
-    //       std::make_shared<ncpp::Plane>(num_rows, cols, col_y, col_x));
-    //   col_x += cols;
-    // };
-
-    // // TODO: Add naming to columns
-
-    // // Rank
-    // add_col(4);
-    // // Name
-    // add_col(23);
-    // // Speed
-    // add_col(8);
-
     while (running.test()) {
       auto render_start = Time::Clock::now();
       auto block_until = render_start + MAX_REDRAW_HZ;
 
       int row = 1;
-
-      // States printout
-      std_plane->putstr(
-          row++, 0,
-          std::format("Field info population time: {:.2f} ms\t\t\t",
-                      field_populate_duration.count())
-              .c_str());
-
-      std_plane->putstr(
-          row++, 0,
-          std::format("Frame rate: {:.2f} Hz\t\t\t", render_hz).c_str());
-
-      std_plane->putstr(
-          row++, 0,
-          std::format("Accrued delay: {:.2f}s / {}s \t\t\t\t\t",
-                      sess.get_accrued_delay_ms().count() / 1000.0,
-                      sess.get_delay_sec().value_or(0))
-              .c_str());
-
-      // std_plane->putstr(row++, 0,
-      //                   std::format("Accrued delay frames: {} frames",
-      //                               sess.accrued_delay_frames())
-      //                       .c_str());
-
-      // std_plane->putstr(row++, 0,
-      //                   std::format("Raw message recv. rate: {:.2f}
-      //                   Hz\t\t\t\t",
-      //                               sess.get_recv_hz())
-      //                       .c_str());
-
-      // std_plane->putstr(row++, 0,
-      //                   std::format("Message enqueue rate: {:.2f}
-      //                   Hz\t\t\t\t",
-      //                               sess.get_enq_hz())
-      //                       .c_str());
-      // std_plane->putstr(row++, 0,
-      //                   std::format("Log write rate: {:.2f} Hz\t\t\t\t",
-      //                               Tools::Log::GetWriteRate())
-      //                       .c_str());
-
-      std_plane->putstr(row++, 0, "----------------------------");
 
       auto next_frame = sess.next_frame();
       if (next_frame.has_value()) {
@@ -195,8 +114,6 @@ struct BasicLeaderboardWorker {
       // board.draw_basic(std_plane, row);
       board.draw_columns();
       row += board_plane->get_dim_y();
-
-      std_plane->putstr(row++, 0, "----------------------------");
 
       nc.render();
 
