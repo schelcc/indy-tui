@@ -27,15 +27,6 @@ struct Rank {
   void operator()(size_t const row, Telemetry::DriverTelemetry const &d,
                   std::shared_ptr<ncpp::Plane> p) {
     p->putstr(row, 1, std::format("{:>4}", d.get_rank()).data());
-    // Tools::Draw::set_row_bg_rgba(p, row, 50, 170, 50, row % 3);
-    uint64_t chan = p->get_channels();
-    ncpp::Palette pal{};
-    unsigned int r;
-    unsigned int g;
-    unsigned int b;
-    pal.get(row, r, g, b);
-    ncchannels_set_bg_rgb8(&chan, r, g, b);
-    p->stain(row, 1, 1, p->get_dim_x() - 2, chan, chan, chan, chan);
   }
 
   static constexpr std::string_view COL_NAME = "Rank";
@@ -84,12 +75,28 @@ struct Throttle {
              ? static_cast<double>(d._telemetry.throttle())
              : 0.0) /
             100,
-        10);
+        8);
     p->putstr(row, 1, progbar.c_str());
   }
 
   static constexpr std::string_view COL_NAME = "Throttle";
-  static constexpr int COL_WIDTH = 12;
+  static constexpr int COL_WIDTH = 8;
+};
+
+struct Brake {
+  void operator()(size_t const row, Telemetry::DriverTelemetry const &d,
+                  std::shared_ptr<ncpp::Plane> p) {
+    auto progbar = Tools::Draw::prog_bar(
+        (d._telemetry.has_breakpercentage()
+             ? static_cast<double>(d._telemetry.breakpercentage())
+             : 0.0) /
+            100,
+        8);
+    p->putstr(row, 1, progbar.c_str());
+  }
+
+  static constexpr std::string_view COL_NAME = "Brake";
+  static constexpr int COL_WIDTH = 8;
 };
 
 }; // namespace Columns
