@@ -31,6 +31,7 @@
 
 #include "tools/appsync_resolver.hpp"
 #include "tools/logger.hpp"
+#include "ui/layout.hpp"
 
 #include <ncpp/NotCurses.hh>
 #include <ncpp/Plane.hh>
@@ -98,37 +99,25 @@ struct BasicLeaderboardWorker {
     */
     // clang-format on
 
-    std::vector<std::shared_ptr<ncpp::Plane>> layout_rows{};
-    bool underrun_accounted = false;
+    // Build main layout
+    using namespace Layout;
+    Container<Direction::VERTICAL, Segments(13)> main_container(std_plane);
 
-    static constexpr size_t ROW_SEGMENTS = 13;
-    size_t segments_used = 0;
-    size_t yoff = 0;
+    auto header_plane = main_container.add_block(Segments(3));
+    auto board_plane = main_container.add_block(Segments(9));
+    auto footer_plane = main_container.add_block(Segments(1));
 
-    auto add_row = [&](size_t const segments, bool const can_underrun = true) {
-      assert(segments_used + segments <= ROW_SEGMENTS);
-      segments_used += segments;
-      size_t dim_y = 0;
-      if (std_plane->get_dim_y() % ROW_SEGMENTS != 0) {
-        double frac_rows = static_cast<double>(std_plane->get_dim_y()) *
-                           static_cast<double>(segments) /
-                           static_cast<double>(ROW_SEGMENTS);
-        dim_y = (!underrun_accounted && can_underrun) ? std::floor(frac_rows)
-                                                      : std::ceil(frac_rows);
-      } else {
-        dim_y = std_plane->get_dim_y() * segments / ROW_SEGMENTS;
-      }
+    // Build header layout
+    Container<Direction::HORIZONTAL, Segments(3)> header_container(
+        header_plane);
 
-      layout_rows.emplace_back(std::make_shared<ncpp::Plane>(
-          std_plane.get(), dim_y, std_plane->get_dim_x(), yoff, 0));
-      yoff += dim_y;
+    auto header_info_plane = header_container.add_block(Segments(2));
+    auto perf_info_plane = header_container.add_block(Segments(1));
 
-      return layout_rows.back();
-    };
-
-    std::shared_ptr<ncpp::Plane> header_plane = add_row(3);
-    std::shared_ptr<ncpp::Plane> board_plane = add_row(9);
-    std::shared_ptr<ncpp::Plane> footer_plane = add_row(1);
+    Container<Direction::VERTICAL, Segments(3)> header_info_container(
+        header_info_plane);
+    auto event_info_plane = header_info_container.add_block(Segments(2));
+    auto telem_status_plane = header_info_container.add_block(Segments(1));
 
     if (!board.add_column(board_plane, Columns::Rank{}))
       return;
@@ -156,7 +145,8 @@ struct BasicLeaderboardWorker {
       }
 
       board.draw_columns();
-      board.draw_event_info(header_plane);
+      board.draw_event_info(event_info_plane);
+      sess.draw_telem_status(telem_status_plane);
 
       nc.render();
 

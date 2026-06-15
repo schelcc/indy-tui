@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <atomic>
 #include <expected>
 #include <latch>
@@ -19,10 +20,13 @@
 
 namespace Core {
 
+static constexpr std::array<std::string_view, 3> SessionSourceStrs = {
+    "Served Remote", "Served Replay", "Local Replay"};
+
 enum class SessionSource {
-  SERVED_REMOTE,
-  SERVED_DEBUG,
-  LOCAL_REPLAY,
+  SERVED_REMOTE = 0,
+  SERVED_DEBUG = 1,
+  LOCAL_REPLAY = 2,
 };
 
 class Session {
@@ -34,7 +38,7 @@ public:
     } kind;
   };
 
-  enum class Status { INITIATING, STARTED };
+  enum class Status { NOT_STARTED, INITIATING, STARTED };
 
 private:
   // How long to wait to try to acquire the recieve semaphore
@@ -62,6 +66,8 @@ private:
 
   std::atomic_flag _running{true};
 
+  std::atomic<Status> _status = Status::NOT_STARTED;
+
   std::vector<std::jthread> _threads{};
 
   /** @brief Callback for message events during initial setup of session. */
@@ -87,6 +93,9 @@ public:
   /** @brief Get the time delta between the most recent frame and the next frame
    * to dequeue. */
   Time::Duration::DblMilliSec get_accrued_delay_ms() noexcept;
+
+  /** @brief Populate the live telemetry status. */
+  void draw_telem_status(std::shared_ptr<ncpp::Plane>);
 
   /** @brief Initiate the session. Returns an expected with the first error
    * encountered, if any. */

@@ -1,12 +1,14 @@
 #include "core/session.hpp"
 #include "app_context.hpp"
 #include "appsync_resolver.hpp"
+#include "draw.hpp"
 #include "ixwebsocket/IXWebSocket.h"
 #include "ixwebsocket/IXWebSocketMessage.h"
 #include "telemetry/telemetry_frame.hpp"
 #include "telemetry/telemetry_queue.hpp"
 #include "time.hpp"
 #include <csignal>
+#include <ncpp/Plane.hh>
 #include <optional>
 #include <queue>
 #include <string_view>
@@ -54,6 +56,7 @@ Session::next_frame() noexcept {
 
 void Session::set_callbacks(Session::Status const status,
                             std::shared_ptr<ix::WebSocket> socket) {
+  _status = status;
   if (status == Status::INITIATING && _source != SessionSource::SERVED_DEBUG) {
     Log::Debug("Set callbacks to initiation configuration", "SESS-SOCKET");
     socket->setOnMessageCallback([this](const ix::WebSocketMessagePtr &msg) {
@@ -275,5 +278,72 @@ void Session::on_message(const ix::WebSocketMessagePtr &msg) {
       Log::Warn("Unhandled enqueue error!", "SESS-ENQ");
   }
 };
+
+void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
+  plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(), 0);
+
+  size_t row = 0;
+
+  auto put_simple_field =
+      [&plane,
+       &row](std::string_view const field_name,
+             Core::IsOneOf<std::string, std::optional<std::string>> auto const
+                 &field) -> void {
+    std::string field_val{""};
+
+    if constexpr (std::is_same_v<std::remove_cvref_t<decltype(field)>,
+                                 std::string>) {
+      field_val = field;
+    } else {
+      field_val = field.value_or("--");
+    }
+
+    plane->putstr(
+        row++, 1,
+        Tools::Draw::trunc_str(std::format("{}: {}", field_name, field_val),
+                               plane->get_dim_x() - 2)
+            .data());
+  };
+
+  // Title
+  plane->putstr(row++, 1,
+                std::format("Telemetry Session Status [Type: {}]",
+                            SessionSourceStrs.at(static_cast<size_t>(_source)))
+                    .data());
+
+  if (_source == SessionSource::SERVED_DEBUG ||
+      _source == SessionSource::SERVED_REMOTE) {
+    std::string status_str{};
+    switch (_status.load()) {
+    case Status::NOT_STARTED:
+      status_str = "Not Connected";
+      break;
+    case Status::INITIATING:
+      status_str = "Initiating connection";
+      break;
+    case Status::STARTED:
+      status_str = "Connected";
+      break;
+    }
+    put_simple_field("Server Connected", status_str);
+  }
+
+  auto delay_res = get_delay_sec();
+  std::optional<std::string> delay_s = {};
+  if (delay_res.has_value())
+    delay_s = std::format("{}", delay_res.value());
+
+  put_simple_field("Configured delay: {}s", delay_s);
+
+  if (delay_res.value_or(0) > 0) {
+    plane->putstr(
+        row++, 1,
+        std::format(L"Delay status: 🭵{}🭰",
+                    Tools::Draw::prog_bar(get_accrued_delay_ms().count() /
+                                              (1000 * delay_res.value_or(1)),
+                                          20))
+            .data());
+  }
+}
 
 }; // namespace Core
