@@ -227,7 +227,6 @@ void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
 
   // TODO: Might be good to break the row names and fields into two different
   // planes to simplify later styling & alignment
-
   plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(), 0);
 
   std::shared_lock lock(_event_info.mtx);

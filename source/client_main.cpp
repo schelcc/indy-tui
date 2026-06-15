@@ -245,7 +245,7 @@ struct KeyWorker {
 
 int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   Tools::Log::SetOut("indycpp.log");
-  Tools::Log::SetLevel(Tools::Log::DEBUG);
+  Tools::Log::SetLevel(Tools::Log::NONE);
 
   using namespace CLI;
 

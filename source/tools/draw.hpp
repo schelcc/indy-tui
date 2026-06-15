@@ -11,17 +11,42 @@
 
 namespace Tools::Draw {
 
-static constexpr std::wstring_view PROGBAR_CHARS = L"▉▊▋▌▍▎▏";
+static constexpr std::wstring_view PROGBAR_CHARS_FULL_HEIGHT = L"▏▎▍▌▋▊▉";
+static constexpr std::wstring_view PROGBAR_CHARS_NARROW = L"╌┄┈";
 
-static inline std::wstring prog_bar(double pct, size_t chars) {
+enum class BarType {
+  FULL_HEIGHT,
+  SHORT,
+};
+
+static inline std::wstring prog_bar(double pct, size_t chars,
+                                    BarType bar_type = BarType::FULL_HEIGHT) {
   using namespace Tools::Numeric;
 
-  assert(leq(pct, 1.0));
+  std::wstring complete_char{};
+  std::wstring space_char = L" ";
+  std::wstring_view char_str;
+  switch (bar_type) {
+  case BarType::FULL_HEIGHT: {
+    complete_char = L"█";
+    char_str = PROGBAR_CHARS_FULL_HEIGHT;
+    break;
+  };
+  case BarType::SHORT: {
+    complete_char = L"─";
+    space_char = L" ";
+    char_str = PROGBAR_CHARS_NARROW;
+    break;
+  };
+  };
+
+  // assert(leq(pct, 1.0));
+  pct = std::min(pct, 1.0);
 
   // Replace all chars up to the incomplete portion with a full block
   double amt = pct * static_cast<double>(chars);
-  double rem = amt - std::floor(amt);
-  double incomp = static_cast<double>(PROGBAR_CHARS.length()) * rem;
+  double rem = std::abs(amt - std::floor(amt));
+  double incomp = static_cast<double>(char_str.length()) * rem;
 
   assert(leq(rem, 1.0));
 
@@ -29,16 +54,16 @@ static inline std::wstring prog_bar(double pct, size_t chars) {
   size_t fractional_idx = static_cast<size_t>(std::floor(incomp));
 
   assert(leq(complete_idx, chars));
-  assert(lt(fractional_idx, PROGBAR_CHARS.length()));
+  assert(lt(fractional_idx, char_str.length()));
 
   std::wstring bar = L"";
   for (size_t i = 0; i < chars; i++) {
     if (i < complete_idx)
-      bar += L"█";
+      bar += complete_char;
     else if (i == complete_idx)
-      bar += PROGBAR_CHARS.at(fractional_idx);
+      bar += char_str.at(fractional_idx);
     else
-      bar += L" ";
+      bar += space_char;
   };
 
   return bar;

@@ -280,6 +280,8 @@ void Session::on_message(const ix::WebSocketMessagePtr &msg) {
 };
 
 void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
+  plane->erase();
+
   plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(), 0);
 
   size_t row = 0;
@@ -325,24 +327,25 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
       status_str = "Connected";
       break;
     }
-    put_simple_field("Server Connected", status_str);
+    put_simple_field("Server Connection Status", status_str);
   }
 
   auto delay_res = get_delay_sec();
   std::optional<std::string> delay_s = {};
   if (delay_res.has_value())
-    delay_s = std::format("{}", delay_res.value());
+    delay_s = std::format("{} s", delay_res.value());
 
-  put_simple_field("Configured delay: {}s", delay_s);
+  put_simple_field("Configured delay", delay_s);
 
   if (delay_res.value_or(0) > 0) {
-    plane->putstr(
-        row++, 1,
-        std::format(L"Delay status: 🭵{}🭰",
-                    Tools::Draw::prog_bar(get_accrued_delay_ms().count() /
-                                              (1000 * delay_res.value_or(1)),
-                                          20))
-            .data());
+    double delay_pct =
+        get_accrued_delay_ms().count() / (1000 * delay_res.value_or(1));
+    plane->putstr(row++, 1,
+                  std::format(L"Delay status: ├{:20}┤ [{:5.2f}%]",
+                              Tools::Draw::prog_bar(
+                                  delay_pct, 20, Tools::Draw::BarType::SHORT),
+                              delay_pct * 100)
+                      .data());
   }
 }
 
