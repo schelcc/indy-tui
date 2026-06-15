@@ -75,19 +75,60 @@ struct BasicLeaderboardWorker {
 
     Telemetry::TelemetryBoard board{};
 
-    double render_hz = 0;
-
     last_tick = Time::Clock::now();
 
-    int margin_left = 2;
-    int margin_right = 0;
-    int margin_top = 6;
-    int margin_bottom = 2;
+    // clang-format off
+    /*
+    |---------------------------------------|
+    |                                       |
+    | <------------- HEADER --------------> |
+    | Vertical amt: 2/7                     |
+    |                                       |
+    |---------------------------------------|
+    |                                       |
+    |                                       |
+    | <------------- COLUMNS -------------> |
+    | Vertical amt: 4/7                     |
+    |                                       |
+    |                                       |
+    |---------------------------------------|
+    | <------------- FOOTER --------------> |
+    | Vertical amt: 1/7                     |
+    |---------------------------------------|
+    */
+    // clang-format on
 
-    std::shared_ptr<ncpp::Plane> board_plane = std::make_shared<ncpp::Plane>(
-        std_plane.get(), std_plane->get_dim_y() - (margin_top + margin_bottom),
-        std_plane->get_dim_x() - (margin_left + margin_right), margin_top,
-        margin_left);
+    std::vector<std::shared_ptr<ncpp::Plane>> layout_rows{};
+    bool underrun_accounted = false;
+
+    static constexpr size_t ROW_SEGMENTS = 13;
+    size_t segments_used = 0;
+    size_t yoff = 0;
+
+    auto add_row = [&](size_t const segments, bool const can_underrun = true) {
+      assert(segments_used + segments <= ROW_SEGMENTS);
+      segments_used += segments;
+      size_t dim_y = 0;
+      if (std_plane->get_dim_y() % ROW_SEGMENTS != 0) {
+        double frac_rows = static_cast<double>(std_plane->get_dim_y()) *
+                           static_cast<double>(segments) /
+                           static_cast<double>(ROW_SEGMENTS);
+        dim_y = (!underrun_accounted && can_underrun) ? std::floor(frac_rows)
+                                                      : std::ceil(frac_rows);
+      } else {
+        dim_y = std_plane->get_dim_y() * segments / ROW_SEGMENTS;
+      }
+
+      layout_rows.emplace_back(std::make_shared<ncpp::Plane>(
+          std_plane.get(), dim_y, std_plane->get_dim_x(), yoff, 0));
+      yoff += dim_y;
+
+      return layout_rows.back();
+    };
+
+    std::shared_ptr<ncpp::Plane> header_plane = add_row(3);
+    std::shared_ptr<ncpp::Plane> board_plane = add_row(9);
+    std::shared_ptr<ncpp::Plane> footer_plane = add_row(1);
 
     if (!board.add_column(board_plane, Columns::Rank{}))
       return;
@@ -96,6 +137,8 @@ struct BasicLeaderboardWorker {
     if (!board.add_column(board_plane, Columns::Speed{}))
       return;
     if (!board.add_column(board_plane, Columns::Throttle{}))
+      return;
+    if (!board.add_column(board_plane, Columns::Brake{}))
       return;
 
     while (running.test()) {
@@ -111,9 +154,9 @@ struct BasicLeaderboardWorker {
           Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
         }
       }
-      // board.draw_basic(std_plane, row);
+
       board.draw_columns();
-      row += board_plane->get_dim_y();
+      board.draw_event_info(header_plane);
 
       nc.render();
 
@@ -123,7 +166,7 @@ struct BasicLeaderboardWorker {
 
       Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
 
-      render_hz = 1000.0 / gap.count();
+      // render_hz = 1000.0 / gap.count();
 
       last_tick = Time::Clock::now();
     }
