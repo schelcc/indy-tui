@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ErpMessage.pb.h"
 #include "columns.hpp"
 #include "google/protobuf/repeated_ptr_field.h"
 
@@ -70,6 +71,34 @@ private:
     ColumnPlane() = default;
   };
 
+  struct EventInfo {
+    // Reader(s) should take shared lock on this
+    std::shared_mutex mtx{};
+
+    // Question: Should a field not existing in an update after it has existed
+    // prior unset that field? Or should it hang around?
+
+    // Found in TrackInformation:
+    std::optional<std::string> track_name = {};
+    std::optional<std::string> track_type = {};
+
+    // Found in HeartBeat:
+    std::optional<std::string> event_name = {};
+    std::optional<std::string> series_name = {};
+    std::optional<std::string> flag_status = {};
+    std::optional<std::string> session_type = {};
+    std::optional<std::string> session_status = {};
+    std::optional<std::string> time_to_go = {};
+    std::optional<std::string> track_time = {};
+    std::optional<int> completed_laps = {};
+    std::optional<int> total_laps = {};
+
+    /** @brief Update fields given a parsed protobuf message. For fields only
+     * found in per-driver entries, uses the first available driver.
+     * Thread-safe. */
+    void update(proto::telemetry::ErpMessage const &);
+  } _event_info{};
+
   std::shared_mutex _driver_vec_mtx;
   std::shared_mutex _driver_map_mtx;
 
@@ -113,7 +142,7 @@ public:
       std::unique_lock lock(_column_planes_mtx);
 
       _column_planes.push_back(ColumnPlane{std::make_shared<ncpp::Plane>(
-          base_plane.get(), num_rows.load() + 1, column_width, col_y.load(),
+          base_plane.get(), base_plane->get_dim_y(), column_width, col_y.load(),
           col_x.load())});
 
       col_x += column_width;
@@ -130,24 +159,20 @@ public:
     return {};
   }
 
-  /** @brief Move an existing column the given number of steps in the given
-   * direction. Places column at end if steps overruns the total number of
-   * columns. */
-  // std::expected<void, Err> move_column(std::string_view const, Direction
-  // const,
-  //                                      size_t const);
-
+  // TODO: Column moving (can just move the planes, shouldn't need to modify the
+  // vec)
   /** @brief Fill in newly received telemetry information. Returns an expected
    * with the error encountered, if any. */
   std::expected<void, Err>
   inform_new_frame(std::unique_ptr<TelemetryFrame> &&) noexcept;
 
-  /** @brief Draw a basic leaderboard noting the drivers' rank, name, number,
-   * and current speed. */
-  void draw_basic(std::shared_ptr<ncpp::Plane>, int &start_row);
-
   /** @brief Invoke registered column functions and draw the result. */
   void draw_columns();
+
+  /** @brief Draw the track event's (non-driver-specific) information. Things
+   * like event name lap count, flag status, time of day, maybe time remaining
+   * if applicable. */
+  void draw_event_info(std::shared_ptr<ncpp::Plane>);
 };
 
 }; // namespace Telemetry

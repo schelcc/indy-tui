@@ -16,7 +16,9 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 
+#include "draw.hpp"
 #include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
 #include "telemetry/telemetry_frame.hpp"
@@ -65,6 +67,55 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
     return std::unexpected(Err(TelemetryBoard::Err::FRAME_INVALID));
 
   ErpMessage message{frame->take_from()};
+
+  // Update event-wide information
+  {
+    std::unique_lock lock(_event_info.mtx);
+
+    // TrackInformation fields
+    if (message.trackinformation_size() > 0) {
+      proto::telemetry::ErpTrackInformation const &info =
+          message.trackinformation().Get(0);
+
+      if (info.has_trackname())
+        _event_info.track_name = info.trackname();
+
+      if (info.has_tracktype())
+        _event_info.track_type = info.tracktype();
+    }
+
+    // HeartBeat fields
+    if (message.heartbeats_size() > 0) {
+      proto::telemetry::ErpHeartBeat const &hbeat = message.heartbeats().Get(0);
+
+      if (hbeat.has_eventname())
+        _event_info.event_name = hbeat.eventname();
+
+      if (hbeat.has_series())
+        _event_info.series_name = hbeat.series();
+
+      if (hbeat.has_currentflag())
+        _event_info.flag_status = hbeat.currentflag();
+
+      if (hbeat.has_sessiontype())
+        _event_info.session_type = hbeat.sessiontype();
+
+      if (hbeat.has_sessionstatus())
+        _event_info.session_status = hbeat.sessionstatus();
+
+      if (hbeat.has_overalltimetogo())
+        _event_info.time_to_go = hbeat.overalltimetogo();
+
+      if (hbeat.has_timeofday())
+        _event_info.track_time = hbeat.timeofday();
+
+      if (hbeat.has_completedlaps())
+        _event_info.completed_laps = hbeat.completedlaps();
+
+      if (hbeat.has_totallaps())
+        _event_info.total_laps = hbeat.totallaps();
+    }
+  }
 
   // Check whether the driver is in the map, adding it if not. If the carnumber
   // couldn't be found, return false. If successful, return true. Can add in a
@@ -124,32 +175,6 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   return {};
 }
 
-void TelemetryBoard::draw_basic(std::shared_ptr<ncpp::Plane> plane,
-                                int &start_row) {
-
-  // Order drivers by rank
-  {
-    std::unique_lock lock(_driver_vec_mtx);
-    std::sort(std::begin(_drivers), std::end(_drivers),
-              DriverTelemetry::OrderByRank);
-  }
-
-  // NOTE: This *should* be fine as they are both readers only of the driver vec
-  // Will be joined at destruction
-
-  reassociate_drivers();
-
-  std::shared_lock lock(_driver_vec_mtx);
-  std::for_each(std::cbegin(_drivers), std::cend(_drivers),
-                [&plane, &start_row](DriverTelemetry const &d) {
-                  plane->putstr(start_row++, 0,
-                                std::format("{:>2}. {:^23} {:>08.2f}",
-                                            d.get_rank(), d.get_name(),
-                                            d.get_speed())
-                                    .data());
-                });
-}
-
 void TelemetryBoard::draw_columns() {
 
   // Order drivers by rank
@@ -159,6 +184,7 @@ void TelemetryBoard::draw_columns() {
               DriverTelemetry::OrderByRank);
   }
 
+  // We've changed the order of the drivers vec, so reassociate the LUT
   reassociate_drivers();
 
   std::shared_lock lock(_column_planes_mtx);
@@ -182,9 +208,6 @@ void TelemetryBoard::draw_columns() {
 
                   plane->putstr(idx++, 1, name.data());
 
-                  // for (unsigned int i = 0; i < plane->get_dim_y(); i++)
-                  //   plane->putwch(idx, i, L'─');
-
                   std::for_each(std::cbegin(_drivers), std::cend(_drivers),
                                 [this, func, &idx, &plane](auto const &driver) {
                                   func(idx++, driver, plane);
@@ -192,66 +215,62 @@ void TelemetryBoard::draw_columns() {
                 });
 }
 
-// std::expected<void, TelemetryBoard::Err>
-// TelemetryBoard::move_column(std::string_view const column_name,
-//                             TelemetryBoard::Direction const dir,
-//                             size_t const steps) {
-//   {
-//     // Avoid unique-locking full columns if the column isn't present
-//     std::shared_lock lock(_columns_mtx);
-//     if (!_column_lookup.contains(column_name))
-//       return std::unexpected(
-//           TelemetryBoard::Err{TelemetryBoard::Err::NO_SUCH_COLUMN});
-//   }
+void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
+  size_t row = 0;
 
-//   {
-//     std::unique_lock lock(_columns_mtx);
+  // TODO: Add putstr helper to Tools::Draw for stylized text
 
-//     size_t const target_idx{_column_lookup.at(column_name)};
+  // FIX: Gonna start with a very simplistic event info, add to later for
+  // event-specific things (like split group practices and qualifying)
 
-//     int const dir_mult{(dir == Direction::LEFT) ? -1 : 1};
+  // FIX: Figure out what to do given row count
 
-//     int const dst_idx_int =
-//         static_cast<int>(target_idx) + (dir_mult * static_cast<int>(steps));
+  // TODO: Might be good to break the row names and fields into two different
+  // planes to simplify later styling & alignment
 
-//     size_t const dst_idx = static_cast<size_t>(std::max(
-//         0, std::min(static_cast<int>(_columns.size() - 1), dst_idx_int)));
+  plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(), 0);
 
-//     assert(dst_idx < _columns.size());
+  std::shared_lock lock(_event_info.mtx);
 
-//     std::vector<std::pair<std::string_view, ColumnFunc>> new_columns;
+  using Tools::Draw::trunc_str;
 
-//     // Copy the target column
-//     std::pair<std::string_view, ColumnFunc> target_column =
-//         _columns.at(target_idx);
+  // Add line for the given field w/ the fstr "<field>: {}"
+  auto put_simple_field =
+      [&plane,
+       &row](std::string_view const field_name,
+             Core::IsOneOf<std::string, std::optional<std::string>> auto const
+                 &field) -> void {
+    std::string field_val{""};
 
-//     // Move over all elements before the new insertion point
-//     std::move(std::begin(_columns), std::begin(_columns) + dst_idx,
-//               std::back_inserter(new_columns));
+    if constexpr (std::is_same_v<std::remove_cvref_t<decltype(field)>,
+                                 std::string>) {
+      field_val = field;
+    } else {
+      field_val = field.value_or("--");
+    }
 
-//     // Copy over moved column
-//     new_columns.emplace_back(std::move(target_column));
+    plane->putstr(row++, 1,
+                  trunc_str(std::format("{}: {}", field_name, field_val),
+                            plane->get_dim_x() - 2)
+                      .data());
+  };
 
-//     // Move over all elements after the insertion point but before the old
-//     point std::move(std::begin(_columns) + dst_idx + 1,
-//               std::begin(_columns) + target_idx,
-//               std::back_inserter(new_columns));
+  plane->putstr(row++, 1, "Event Information");
 
-//     // Move over all elements which are after the old point
-//     std::move(std::begin(_columns) + target_idx + 1, std::end(_columns),
-//               std::back_inserter(new_columns));
-
-//     _columns = std::move(new_columns);
-
-//     // Fix the column LUT
-//     size_t idx{0};
-//     std::for_each(std::begin(_columns), std::end(_columns),
-//                   [this, &idx](auto const &column_func_pair) {
-//                     _column_lookup.at(std::get<0>(column_func_pair)) = idx++;
-//                   });
-
-//     return {};
-//   }
-// }
-
+  put_simple_field("Event Name", _event_info.event_name);
+  put_simple_field("Track Name", _event_info.track_name);
+  put_simple_field("Session Type", _event_info.session_type);
+  put_simple_field("Session Status", _event_info.session_status);
+  put_simple_field("Track Time", _event_info.track_time);
+  put_simple_field("Flag Status", _event_info.flag_status);
+  put_simple_field(
+      "Laps",
+      std::format("{} / {}",
+                  _event_info.completed_laps.has_value()
+                      ? std::format("{}", _event_info.completed_laps.value())
+                      : "--",
+                  _event_info.total_laps.has_value()
+                      ? std::format("{}", _event_info.total_laps.value())
+                      : "--"));
+}
 }; // namespace Telemetry
