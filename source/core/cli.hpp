@@ -315,21 +315,5 @@ public:
         std::format("No {} found with name internal name '{}'",
                     Element::element_name, internal_name));
   }
-
-  // template <typename T> T get(std::string_view const internal_name) {
-  //   if (_arg_lookup.contains(internal_name))
-  //     return _args.at(_arg_lookup.at(internal_name)).get_from_handler<T>();
-  //   else if (_named_opt_lookup.contains(internal_name))
-  //     return std::visit(
-  //         Core::Overload{
-  //             [](Flag const &o) -> T { return o.parsed_state.value(); },
-  //             [](auto const &o) -> T {
-  //               return o.template get_from_handler<T>();
-  //             }},
-  //         _opts.at(_named_opt_lookup.at(internal_name)));
-  //   else
-  //     throw InputParsingErr(std::format(
-  //         "No argument or option found with name '{}'", internal_name));
-  // }
 };
 }; // namespace CLI

@@ -34,6 +34,12 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
           .set_tool_name("indy-tui")
           .set_desc("A cool little toy for following races from the terminal.");
 
+  parser.add_element<Flag>("help")
+      .set_help_msg("Show this message.")
+      .set_long_opt("help")
+      .set_short_opt("h")
+      .set_default_state(false);
+
   parser.add_element<Arg>("mode")
       .set_help_msg("What mode of operation to use. Options are 'live', "
                     "'live-debug', and "
@@ -91,6 +97,15 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     std::println("Error encountered parsing command line input: {}", e.what());
     std::println("{}", parser.get_help());
     return EXIT_FAILURE;
+  }
+
+  // If help is set, print the help msg and quit. We leave this until now,
+  // rather than embedding it into parsing directly and quitting as soon as we
+  // have it so that we can allow the rest of parsing to take place, finding any
+  // alerting user if there are other errors
+  if (parser.get<Flag, bool>("help")) {
+    std::println("{}", parser.get_help());
+    return EXIT_SUCCESS;
   }
 
   Tools::Log::SetOut(parser.get<Option, std::string_view>("log output"));
