@@ -1,247 +1,27 @@
 #include <atomic>
-#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-
-#include <google/protobuf/descriptor.h>
-#include <ncpp/NCKey.hh>
-#include <ncpp/Root.hh>
-#include <notcurses/nckeys.h>
-#include <notcurses/notcurses.h>
 #include <optional>
 #include <print>
-
-#include <cstdlib>
-#include <ixwebsocket/IXNetSystem.h>
-#include <ixwebsocket/IXUserAgent.h>
-#include <ixwebsocket/IXWebSocket.h>
 #include <pthread.h>
-#include <string>
 #include <thread>
 #include <vector>
 
-#include "app_context.hpp"
-#include "core/cli.hpp"
-#include "core/columns.hpp"
-#include "core/session.hpp"
-#include "core/time.hpp"
-
-#include "telemetry/telemetry_board.hpp"
-
-#include "tools/appsync_resolver.hpp"
-#include "tools/logger.hpp"
-#include "ui/layout.hpp"
-
+#include <google/protobuf/descriptor.h>
+#include <ncpp/NCKey.hh>
 #include <ncpp/NotCurses.hh>
 #include <ncpp/Plane.hh>
+#include <ncpp/Root.hh>
+#include <notcurses/nckeys.h>
+#include <notcurses/notcurses.h>
 
-using Tools::AppSyncSession;
+#include "core/app_context.hpp"
+#include "core/cli.hpp"
+#include "core/session.hpp"
+#include "core/workers.hpp"
 
-using std::chrono::duration_cast;
-using std::chrono::hours;
-using std::chrono::minutes;
-using std::chrono::seconds;
-
-std::string_view evtype_to_str(ncinput in) {
-  switch (in.evtype) {
-  case NCTYPE_UNKNOWN:
-    return "UNK";
-  case NCTYPE_PRESS:
-    return "PRESS";
-  case NCTYPE_REPEAT:
-    return "REPEAT";
-  case NCTYPE_RELEASE:
-    return "RELEASE";
-  default:
-    return "!MISSING_STR!";
-  }
-}
-
-struct BasicLeaderboardWorker {
-  ncpp::NotCurses &nc;
-  std::atomic_flag &running;
-  Core::Session &sess;
-
-  static constexpr Time::Duration::UIntMilliSec MAX_REDRAW_HZ =
-      Time::Duration::UIntMilliSec(100);
-
-  void operator()() {
-    Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
-
-    std::shared_ptr<ncpp::Plane> std_plane(nc.get_stdplane());
-
-    Time::Duration::DblMilliSec field_populate_duration;
-    Time::TimePoint last_tick;
-
-    Telemetry::TelemetryBoard board{};
-
-    last_tick = Time::Clock::now();
-
-    // clang-format off
-    /*
-    |---------------------------------------|
-    |                                       |
-    | <------------- HEADER --------------> |
-    | Vertical amt: 2/7                     |
-    |                                       |
-    |---------------------------------------|
-    |                                       |
-    |                                       |
-    | <------------- COLUMNS -------------> |
-    | Vertical amt: 4/7                     |
-    |                                       |
-    |                                       |
-    |---------------------------------------|
-    | <------------- FOOTER --------------> |
-    | Vertical amt: 1/7                     |
-    |---------------------------------------|
-    */
-    // clang-format on
-
-    // Build main layout
-    using namespace Layout;
-    Container<Direction::VERTICAL, Segments(13)> main_container(std_plane);
-
-    auto header_plane = main_container.add_block(Segments(3));
-    auto board_plane = main_container.add_block(Segments(9));
-    auto footer_plane = main_container.add_block(Segments(1));
-
-    // Build header layout
-    Container<Direction::HORIZONTAL, Segments(3)> header_container(
-        header_plane);
-
-    auto header_info_plane = header_container.add_block(Segments(2));
-    auto perf_info_plane = header_container.add_block(Segments(1));
-
-    Container<Direction::VERTICAL, Segments(3)> header_info_container(
-        header_info_plane);
-    auto event_info_plane = header_info_container.add_block(Segments(2));
-    auto telem_status_plane = header_info_container.add_block(Segments(1));
-
-    if (!board.add_column(board_plane, Columns::Rank{}))
-      return;
-    if (!board.add_column(board_plane, Columns::DriverName{}))
-      return;
-    if (!board.add_column(board_plane, Columns::Speed{}))
-      return;
-    if (!board.add_column(board_plane, Columns::Throttle{}))
-      return;
-    if (!board.add_column(board_plane, Columns::Brake{}))
-      return;
-
-    while (running.test()) {
-      auto render_start = Time::Clock::now();
-      auto block_until = render_start + MAX_REDRAW_HZ;
-
-      int row = 1;
-
-      auto next_frame = sess.next_frame();
-      if (next_frame.has_value()) {
-        if (!board.inform_new_frame(std::move(next_frame.value()))
-                 .has_value()) {
-          Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
-        }
-      }
-
-      board.draw_columns();
-      board.draw_event_info(event_info_plane);
-      sess.draw_telem_status(telem_status_plane);
-
-      nc.render();
-
-      std_plane->erase();
-
-      std::this_thread::sleep_until(block_until);
-
-      Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
-
-      // render_hz = 1000.0 / gap.count();
-
-      last_tick = Time::Clock::now();
-    }
-
-    Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
-    nc.stop();
-  }
-};
-
-struct KeyWorker {
-  ncpp::NotCurses &nc;
-  std::vector<ncpp::NCKey> &key_queue;
-  std::atomic_flag &running;
-  Core::Session &sess;
-  size_t &delay;
-
-  enum AllowedModifier {
-    NONE,
-    SHIFT,
-    CTRL,
-  };
-
-  bool has_modifier(const ncinput *ni, const AllowedModifier mod) const {
-    const bool has_ctrl = ncinput_ctrl_p(ni);
-    const bool has_shift = ncinput_shift_p(ni);
-
-    switch (mod) {
-    case NONE:
-      return (!has_shift && !has_ctrl);
-    case SHIFT:
-      return has_shift;
-    case CTRL:
-      return has_ctrl;
-    default:
-      return false;
-    }
-  }
-
-  template <typename... Ts>
-    requires(std::is_same_v<Ts, AllowedModifier> && ...)
-  bool has_modifiers(const ncinput *ni, const Ts... mods) const {
-    return (has_modifier(ni, mods) && ...);
-  }
-
-  bool key_char_is(const wchar_t key, const ncinput *ni) const {
-    return ((*ni->utf8 == key) && has_modifier(ni, NONE));
-  }
-
-  template <typename... Ts>
-    requires(std::is_same_v<Ts, AllowedModifier> && ...)
-  bool key_char_is(const wchar_t key, const ncinput *ni,
-                   const Ts... mods) const {
-    return ((*ni->utf8 == key) && (has_modifier(ni, mods) && ...));
-  }
-
-  static constexpr struct timespec INPUT_TIMEOUT{.tv_sec = 5, .tv_nsec = 0};
-
-  void operator()() {
-    Tools::Log::Debug("Started key worker", "WORKER-INPUT");
-
-    nc.linesigs_disable();
-
-    while (running.test()) {
-      ncinput in{};
-
-      if (nc.get(&INPUT_TIMEOUT, &in) == 0)
-        continue;
-
-      if (in.evtype == ncpp::EvType::Release) {
-        // Release-only events
-        if (key_char_is('=', &in, SHIFT)) {
-          Tools::Log::Debug("Increase delay requested", "WORKER-INPUT");
-          sess.set_delay_sec(++delay);
-        } else if (key_char_is('-', &in)) {
-          Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
-          sess.set_delay_sec(delay == 0 ? 0 : --delay);
-        } else if (key_char_is('q', &in) || (key_char_is('C', &in, CTRL) &&
-                                             !key_char_is('C', &in, SHIFT))) {
-          Tools::Log::Debug("Quit requrested", "WORKER-INPUT");
-          App::AppContext::Shutdown("Quit requested by user");
-        }
-      }
-    }
-  }
-};
+#include "tools/logger.hpp"
 
 int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   Tools::Log::SetOut("indycpp.log");
@@ -331,13 +111,13 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   setlocale(LC_ALL, "");
   notcurses_options nc_opts{};
 
-  // nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
-  nc_opts.flags = NCOPTION_NO_QUIT_SIGHANDLERS;
+  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
 
   ncpp::NotCurses nc{nc_opts};
 
-  std::thread output_thread{BasicLeaderboardWorker{nc, running, sess}};
-  std::thread input_thread{KeyWorker{nc, key_queue, running, sess, delay}};
+  std::thread output_thread{Workers::InterfaceWorker{nc, running, sess}};
+  std::thread input_thread{
+      Workers::KeyWorker{nc, key_queue, running, sess, delay}};
 
   pthread_setname_np(output_thread.native_handle(), "Display");
   pthread_setname_np(input_thread.native_handle(), "Input");
