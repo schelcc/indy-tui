@@ -3,6 +3,7 @@
 
 #include <ncpp/NotCurses.hh>
 
+#include "core/input.hpp"
 #include "core/workers.hpp"
 
 #include "core/app_context.hpp"
@@ -54,26 +55,40 @@ void KeyWorker::operator()(std::stop_token stop_tok) {
 
   nc.linesigs_disable();
 
+  using Input::KeyWithMod;
+  using Input::Modifier;
+
+  Input::InputHandler handler{};
+
+  handler
+      .register_callback(KeyWithMod('=', Modifier::SHIFT),
+                         [this]() {
+                           Tools::Log::Debug("Increase delay requested",
+                                             "WORKER-INPUT");
+                           sess.set_delay_sec(++delay);
+                         })
+      .register_callback(KeyWithMod('-', Modifier::NONE),
+                         [this]() {
+                           Tools::Log::Debug("Decrease delay requested",
+                                             "WORKER-INPUT");
+                           sess.set_delay_sec(delay == 0 ? 0 : --delay);
+                         })
+      .register_callback(KeyWithMod('q', Modifier::NONE),
+                         []() {
+                           Tools::Log::Debug("Quit requested", "WORKER-INPUT");
+                           App::AppContext::Shutdown("Quit requested by user");
+                         })
+      .duplicate_callback(KeyWithMod('q', Modifier::NONE),
+                          KeyWithMod('C', Modifier::CTRL));
+
   while (!stop_tok.stop_requested()) {
     ncinput in{};
 
     if (nc.get(&INPUT_TIMEOUT, &in) == 0)
       continue;
 
-    if (in.evtype == ncpp::EvType::Release) {
-      // Release-only events
-      if (key_char_is('=', &in, SHIFT)) {
-        Tools::Log::Debug("Increase delay requested", "WORKER-INPUT");
-        sess.set_delay_sec(++delay);
-      } else if (key_char_is('-', &in)) {
-        Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
-        sess.set_delay_sec(delay == 0 ? 0 : --delay);
-      } else if (key_char_is('q', &in) || (key_char_is('C', &in, CTRL) &&
-                                           !key_char_is('C', &in, SHIFT))) {
-        Tools::Log::Debug("Quit requrested", "WORKER-INPUT");
-        App::AppContext::Shutdown("Quit requested by user");
-      }
-    }
+    if (in.evtype == ncpp::EvType::Release)
+      handler.handle_input(in);
   }
 }
 
