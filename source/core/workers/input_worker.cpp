@@ -49,12 +49,12 @@ bool key_char_is(const wchar_t key, const ncinput *ni, const Ts... mods) {
 
 namespace Workers {
 
-void KeyWorker::operator()() {
+void KeyWorker::operator()(std::stop_token stop_tok) {
   Tools::Log::Debug("Started key worker", "WORKER-INPUT");
 
   nc.linesigs_disable();
 
-  while (running.test()) {
+  while (!stop_tok.stop_requested()) {
     ncinput in{};
 
     if (nc.get(&INPUT_TIMEOUT, &in) == 0)

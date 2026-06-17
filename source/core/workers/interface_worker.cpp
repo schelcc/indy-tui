@@ -8,7 +8,7 @@
 
 namespace Workers {
 
-void InterfaceWorker::operator()() {
+void InterfaceWorker::operator()(std::stop_token stop_tok) {
   Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
 
   std::shared_ptr<ncpp::Plane> std_plane(nc.get_stdplane());
@@ -50,7 +50,7 @@ void InterfaceWorker::operator()() {
   if (!board.add_column(board_plane, Columns::Brake{}))
     return;
 
-  while (running.test()) {
+  while (!stop_tok.stop_requested()) {
     auto render_start = Time::Clock::now();
     auto block_until = render_start + MAX_REDRAW_HZ;
 

@@ -1,12 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <stop_token>
 #include <vector>
 
 #include <ncpp/NotCurses.hh>
 
-#include "core/app_context.hpp"
-#include "core/core.hpp"
 #include "core/session.hpp"
 #include "time.hpp"
 
@@ -23,7 +22,7 @@ struct InterfaceWorker {
   static constexpr Time::Duration::UIntMilliSec MAX_REDRAW_HZ =
       Time::Duration::UIntMilliSec(100);
 
-  void operator()();
+  void operator()(std::stop_token);
 };
 
 struct KeyWorker {
@@ -35,7 +34,7 @@ struct KeyWorker {
 
   static constexpr struct timespec INPUT_TIMEOUT{.tv_sec = 5, .tv_nsec = 0};
 
-  void operator()();
+  void operator()(std::stop_token);
 };
 
 }; // namespace Workers

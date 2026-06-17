@@ -130,8 +130,8 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   ncpp::NotCurses nc{nc_opts};
 
-  std::thread output_thread{Workers::InterfaceWorker{nc, running, sess}};
-  std::thread input_thread{
+  std::jthread output_thread{Workers::InterfaceWorker{nc, running, sess}};
+  std::jthread input_thread{
       Workers::KeyWorker{nc, key_queue, running, sess, delay}};
 
   pthread_setname_np(output_thread.native_handle(), "Display");
@@ -144,7 +144,9 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
                       "no reason provided -- ungraceful shutdown")),
       "MAIN");
 
-  running.clear();
+  // running.clear();
+  input_thread.request_stop();
+  output_thread.request_stop();
 
   input_thread.join();
   output_thread.join();
