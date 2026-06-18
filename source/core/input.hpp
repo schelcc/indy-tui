@@ -27,11 +27,16 @@ struct KeyWithMod {
 struct KeyCallback {
   std::function<void()> callback{};
 
+  // Track a small description of what keys do for a later "controls help" menu
+  // like lazygit's "?" menu
+  std::string_view desc{};
+
   template <typename Func>
     requires std::is_invocable_v<Func>
-  KeyCallback(Func &&_callback)
+  KeyCallback(std::string_view const _desc, Func &&_callback)
       : callback(
-            [_callback = std::move(_callback)]() { std::invoke(_callback); }) {}
+            [_callback = std::move(_callback)]() { std::invoke(_callback); }),
+        desc(_desc) {}
 };
 
 }; // namespace Input
@@ -56,8 +61,9 @@ struct InputHandler {
 
   template <typename Func>
     requires std::is_invocable_v<Func>
-  InputHandler &register_callback(KeyWithMod &&k, Func &&f) {
-    input_table.insert_or_assign(std::move(k), std::move(f));
+  InputHandler &register_callback(KeyWithMod &&k, std::string_view const desc,
+                                  Func &&f) {
+    input_table.insert_or_assign(std::move(k), KeyCallback(desc, std::move(f)));
     return *this;
   }
 

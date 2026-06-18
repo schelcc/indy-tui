@@ -61,19 +61,21 @@ void KeyWorker::operator()(std::stop_token stop_tok) {
   Input::InputHandler handler{};
 
   handler
-      .register_callback(KeyWithMod('=', Modifier::SHIFT),
-                         [this]() {
-                           Tools::Log::Debug("Increase delay requested",
-                                             "WORKER-INPUT");
-                           sess.set_delay_sec(++delay);
-                         })
-      .register_callback(KeyWithMod('-', Modifier::NONE),
-                         [this]() {
-                           Tools::Log::Debug("Decrease delay requested",
-                                             "WORKER-INPUT");
-                           sess.set_delay_sec(delay == 0 ? 0 : --delay);
-                         })
+      .register_callback(
+          KeyWithMod('=', Modifier::SHIFT), "Increase the delay by 1s",
+          [this]() {
+            Tools::Log::Debug("Increase delay requested", "WORKER-INPUT");
+            sess.set_delay_sec(++delay);
+          })
+      .register_callback(
+          KeyWithMod('-', Modifier::NONE),
+          "Decrease the delay by 1s, only if the delay is positive",
+          [this]() {
+            Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
+            sess.set_delay_sec(delay == 0 ? 0 : --delay);
+          })
       .register_callback(KeyWithMod('q', Modifier::NONE),
+                         "Exit the application",
                          []() {
                            Tools::Log::Debug("Quit requested", "WORKER-INPUT");
                            App::AppContext::Shutdown("Quit requested by user");
