@@ -15,19 +15,21 @@ public:
     } kind;
   };
 
-  std::string _car_num;
+  std::string _car_num = "";
   proto::telemetry::ErpTelemetry _telemetry{};
   proto::telemetry::ErpOverallResults _results{};
   proto::telemetry::ErpCompletedLapResult _completed_lap{};
 
   // Number of frames since we last got a telemetry update. Used to "invalidate"
   // stale telemetry
-  size_t _frames_since_telem{0};
+  size_t _frames_since_telem = 0;
 
   // Number of frames after which telemetry is considered stale
   static constexpr size_t STALE_TELEM_THRESH = 5;
 
 public:
+  std::atomic_bool in_pit = true;
+
   /** @brief Increment the telemetry stale count. */
   void frame_passed() { _frames_since_telem++; }
 
@@ -48,50 +50,6 @@ public:
   /** @brief Take in the given completed lap results. */
   void take_new_lap(proto::telemetry::ErpCompletedLapResult &&) noexcept;
 
-  // /** @brief Retrieve a reference to the underlying telemetry, if available.
-  // */
-  // [[nodiscard]] std::expected<
-  //     std::reference_wrapper<const proto::telemetry::ErpTelemetry>, Err>
-  //     const
-  // get_telemetry_ref() const {
-  //   // return (_telemetry.IsInitialized() &&
-  //   !_telemetry.IsInitializedWithErrors())
-  //   //            ? std::expected<std::reference_wrapper<
-  //   //                                const proto::telemetry::ErpTelemetry>,
-  //   //                            Err>(std::cref(_telemetry))
-  //   //            : std::unexpected(Err(Err::MISSING_FIELD));
-  // }
-
-  // /** @brief Retrieve a reference to the underlying overall results, if
-  //  * available. */
-  // [[nodiscard]] std::expected<
-  //     std::reference_wrapper<const proto::telemetry::ErpOverallResults>,
-  //     Err> const
-  // get_results_ref() const {
-  //   return (_telemetry.IsInitialized() &&
-  //   !_telemetry.IsInitializedWithErrors())
-  //              ? std::expected<std::reference_wrapper<
-  //                                  const
-  //                                  proto::telemetry::ErpOverallResults>,
-  //                              Err>(std::cref(_results))
-  //              : std::unexpected(Err(Err::MISSING_FIELD));
-  // }
-
-  // /** @brief Retrieve a reference to the underlying lap completion stats, if
-  //  * available. */
-  // [[nodiscard]] std::expected<
-  //     std::reference_wrapper<const proto::telemetry::ErpCompletedLapResult>,
-  //     Err> const
-  // get_lap_completed_ref() const {
-  //   return (_telemetry.IsInitialized() &&
-  //   !_telemetry.IsInitializedWithErrors())
-  //              ? std::expected<
-  //                    std::reference_wrapper<
-  //                        const proto::telemetry::ErpCompletedLapResult>,
-  //                    Err>(std::cref(_completed_lap))
-  //              : std::unexpected(Err(Err::MISSING_FIELD));
-  // }
-
   [[nodiscard]] int32_t get_rank() const;
   [[nodiscard]] std::string get_name() const;
   [[nodiscard]] double get_speed() const;
@@ -99,6 +57,14 @@ public:
   // Sort options
 
   static bool OrderByRank(DriverTelemetry const &, DriverTelemetry const &);
+
+  DriverTelemetry() = default;
+
+  DriverTelemetry(DriverTelemetry const &) = delete;
+  DriverTelemetry &operator=(DriverTelemetry const &) = delete;
+
+  DriverTelemetry(DriverTelemetry &&) noexcept;
+  DriverTelemetry &operator=(DriverTelemetry &&) noexcept;
 };
 
 }; // namespace Telemetry

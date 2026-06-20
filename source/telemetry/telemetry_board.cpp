@@ -18,6 +18,7 @@
 #include <thread>
 #include <type_traits>
 
+#include "core.hpp"
 #include "draw.hpp"
 #include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
@@ -127,7 +128,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
 
     if (!_driver_map.contains(car_num)) {
       _driver_map[car_num] = _drivers.size();
-      _drivers.emplace_back(DriverTelemetry{});
+      _drivers.emplace_back();
     }
 
     return true;
@@ -147,8 +148,14 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
                   [this, &check_and_populate](auto iter) {
                     assert(check_and_populate(iter));
 
-                    _drivers.at(_driver_map.at(iter.carnumber()))
-                        .take_new_telemetry(std::move(iter));
+                    DriverTelemetry &driver =
+                        _drivers.at(_driver_map.at(iter.carnumber()));
+
+                    driver.take_new_telemetry(std::move(iter));
+
+                    // Each-update tasks/checks
+                    if (driver._telemetry.has_isinpit())
+                      driver.in_pit.store(driver._telemetry.isinpit());
                   });
   }
 
@@ -189,30 +196,30 @@ void TelemetryBoard::draw_columns() {
 
   std::shared_lock lock(_column_planes_mtx);
   auto v = std::views::zip(_column_planes, _columns);
-  std::for_each(std::execution::par, std::begin(v), std::end(v),
-                [&, this](auto plane_col_pair) -> void {
-                  ColumnPlane &col_plane = std::get<0>(plane_col_pair);
-                  ColumnPair &col_pair = std::get<1>(plane_col_pair);
+  std::for_each(
+      std::execution::par, std::begin(v), std::end(v),
+      [&, this](auto plane_col_pair) -> void {
+        ColumnPlane &col_plane = std::get<0>(plane_col_pair);
+        ColumnPair &col_pair = std::get<1>(plane_col_pair);
 
-                  std::scoped_lock col_lock(col_plane.mtx);
-                  std::shared_lock driver_lock(_driver_vec_mtx);
+        std::scoped_lock col_lock(col_plane.mtx);
+        std::shared_lock driver_lock(_driver_vec_mtx);
 
-                  size_t idx = 0;
+        auto &plane = col_plane.plane;
+        auto &func = col_pair.func;
+        auto &name = col_pair.name;
 
-                  auto &plane = col_plane.plane;
-                  auto &func = col_pair.func;
-                  auto &name = col_pair.name;
+        plane->erase();
+        Tools::Draw::border_with_title(plane, name.data());
 
-                  plane->perimeter_rounded(ncpp::NCBox::CornerMask,
-                                           plane->get_channels(), 0);
+        size_t row = 1;
 
-                  plane->putstr(idx++, 1, name.data());
-
-                  std::for_each(std::cbegin(_drivers), std::cend(_drivers),
-                                [this, func, &idx, &plane](auto const &driver) {
-                                  func(idx++, driver, plane);
-                                });
-                });
+        std::for_each(
+            std::cbegin(_drivers), std::cend(_drivers),
+            [func, &row, &plane](auto const &driver) {
+              std::invoke(func, driver).apply_to_plane(plane, row++, 1);
+            });
+      });
 }
 
 void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {

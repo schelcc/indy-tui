@@ -9,6 +9,10 @@
 
 #include <ncpp/Plane.hh>
 
+namespace UI {
+enum class Focus { ACTIVE, INACTIVE };
+};
+
 namespace Layout {
 
 enum Direction { HORIZONTAL, VERTICAL };

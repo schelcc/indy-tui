@@ -13,7 +13,9 @@
 
 #include "ErpMessage.pb.h"
 #include "columns.hpp"
+#include "core.hpp"
 #include "google/protobuf/repeated_ptr_field.h"
+#include "ui/ui.hpp"
 
 #include <ncpp/Plane.hh>
 
@@ -47,8 +49,11 @@ private:
   template <typename Field>
   using ProtoIter = google::protobuf::RepeatedPtrField<Field>;
 
-  using ColumnFunc = std::function<void(size_t const, DriverTelemetry const &,
-                                        std::shared_ptr<ncpp::Plane>)>;
+  // using ColumnFunc = std::function<void(size_t const, DriverTelemetry const
+  // &,
+  //                                       std::shared_ptr<ncpp::Plane>)>;
+  // using ColumnFunc = std::function<Core::MultiStr(DriverTelemetry const &)>;
+  using ColumnFunc = std::function<UI::String(DriverTelemetry const &)>;
 
   struct ColumnPair {
     const std::string_view name;
@@ -109,8 +114,8 @@ private:
   std::vector<ColumnPair> _columns{};
   std::shared_mutex _columns_mtx;
 
-  std::atomic_int col_x{0};
-  std::atomic_int col_y{0};
+  std::atomic_int col_x{1};
+  std::atomic_int col_y{1};
   std::atomic_int num_rows{34};
   std::vector<ColumnPlane> _column_planes;
   std::shared_mutex _column_planes_mtx;
@@ -142,8 +147,8 @@ public:
       std::unique_lock lock(_column_planes_mtx);
 
       _column_planes.push_back(ColumnPlane{std::make_shared<ncpp::Plane>(
-          base_plane.get(), base_plane->get_dim_y(), column_width, col_y.load(),
-          col_x.load())});
+          base_plane.get(), base_plane->get_dim_y() - 2, column_width,
+          col_y.load(), col_x.load())});
 
       col_x += column_width;
     }
@@ -152,9 +157,8 @@ public:
     _column_lookup[col.COL_NAME.data()] = _columns.size();
     _columns.push_back(ColumnPair{
         col.COL_NAME,
-        [f = std::move(col)](size_t const row, DriverTelemetry const &d,
-                             std::shared_ptr<ncpp::Plane> plane) mutable {
-          std::invoke(f, row, d, plane);
+        [f = std::move(col)](DriverTelemetry const &d) mutable -> UI::String {
+          return std::invoke(f, d);
         }});
     return {};
   }

@@ -1,9 +1,11 @@
 #pragma once
 #include "core.hpp"
 #include "tools/numeric.hpp"
+#include "ui/layout.hpp"
 #include <cassert>
 #include <cmath>
 #include <memory>
+#include <ncpp/CellStyle.hh>
 #include <ncpp/Palette.hh>
 #include <ncpp/Plane.hh>
 #include <notcurses/notcurses.h>
@@ -70,21 +72,23 @@ static inline std::wstring prog_bar(double pct, size_t chars,
 }
 
 enum class PaletteColors {
-  RED_HARD = 0,
-  GREEN_HARD = 1,
-  YELLOW_HARD = 2,
-  BLUE_HARD = 3,
-  PURPLE_HARD = 4,
-  CYAN_HARD = 5,
-  LIGHT_GRAY_HARD = 6,
-  DARK_GRAY_HARD = 7,
-  GREEN_SOFT = 8,
-  YELLOW_SOFT = 9,
-  BLUE_SOFT = 10,
-  PURPLE_SOFT = 11,
-  CYAN_SOFT = 12,
-  LIGHT_GRAY_SOFT = 13,
-  DARK_GRAY_SOFT = 14,
+  BLACK_HARD = 0,
+  RED_HARD = 1,
+  GREEN_HARD = 2,
+  YELLOW_HARD = 3,
+  BLUE_HARD = 4,
+  PURPLE_HARD = 5,
+  CYAN_HARD = 6,
+  GRAY_HARD = 7,
+  BLACK_SOFT = 8,
+  RED_SOFT = 9,
+  GREEN_SOFT = 10,
+  YELLOW_SOFT = 11,
+  BLUE_SOFT = 12,
+  PURPLE_SOFT = 13,
+  CYAN_SOFT = 14,
+  GRAY_SOFT = 15,
+  NONE = 16,
 };
 
 enum class Target {
@@ -92,10 +96,13 @@ enum class Target {
   BG,
 };
 
-static inline void set_row_color(std::shared_ptr<ncpp::Plane> p,
-                                 size_t const row, Target const target,
-                                 PaletteColors const color) {
+static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
+                                         Target const target,
+                                         PaletteColors const color) {
   uint64_t chan = p->get_channels();
+
+  if (color == PaletteColors::NONE)
+    return chan;
 
   ncpp::Palette pal{};
 
@@ -110,6 +117,14 @@ static inline void set_row_color(std::shared_ptr<ncpp::Plane> p,
   else
     ncchannels_set_bg_rgb8(&chan, r, g, b);
 
+  return chan;
+}
+
+static inline void set_row_color(std::shared_ptr<ncpp::Plane> p,
+                                 size_t const row, Target const target,
+                                 PaletteColors const color) {
+  uint64_t chan = mask_pal_channels(p, target, color);
+
   p->stain(row, 1, 1, p->get_dim_x() - 2, chan, chan, chan, chan);
 }
 
@@ -118,6 +133,20 @@ static inline std::string trunc_str(std::string_view const s,
   return s.length() <= (max_len - 3)
              ? std::string{s}
              : std::string{s.substr(0, max_len)} + "...";
+}
+
+static inline void
+border_with_title(std::shared_ptr<ncpp::Plane> p, std::string const &name,
+                  UI::Focus const focus = UI::Focus::INACTIVE) {
+  auto color = mask_pal_channels(p, Target::FG,
+                                 (focus == UI::Focus::INACTIVE)
+                                     ? PaletteColors::NONE
+                                     : PaletteColors::BLUE_SOFT);
+
+  p->perimeter_rounded(ncpp::NCBox::CornerMask, color, 0);
+
+  p->putstr(0, 1, name.c_str());
+  p->stain(0, 1, 1, name.length(), color, color, color, color);
 }
 
 }; // namespace Tools::Draw

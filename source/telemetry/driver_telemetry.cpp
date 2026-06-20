@@ -40,4 +40,23 @@ void DriverTelemetry::take_new_lap(
   return a.get_rank() < b.get_rank();
 }
 
+DriverTelemetry::DriverTelemetry(DriverTelemetry &&d) noexcept {
+  _car_num = d._car_num;
+  _telemetry = std::move(d._telemetry);
+  _results = std::move(d._results);
+  _completed_lap = std::move(d._completed_lap);
+  _frames_since_telem = d._frames_since_telem;
+  in_pit = d.in_pit.load();
+}
+
+DriverTelemetry &DriverTelemetry::operator=(DriverTelemetry &&d) noexcept {
+  _car_num = d._car_num;
+  _telemetry = std::move(d._telemetry);
+  _results = std::move(d._results);
+  _completed_lap = std::move(d._completed_lap);
+  _frames_since_telem = d._frames_since_telem;
+  in_pit = d.in_pit.load();
+  return *this;
+}
+
 }; // namespace Telemetry

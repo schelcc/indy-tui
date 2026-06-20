@@ -255,15 +255,6 @@ void Session::init_on_message(const ix::WebSocketMessagePtr &msg) {
 };
 
 void Session::on_message(const ix::WebSocketMessagePtr &msg) {
-  // If we can lock, do so, otherwise just move on since we prioritize
-  // sticking to the delay over full receipt
-  // if (_recv_mtx.try_lock()) {
-  //   auto payload = parse_payload(msg->str);
-  //   if (payload.has_value())
-  //     _recv_payload = payload.value();
-
-  //   _recv_mtx.unlock();
-  // }
   if (msg->str.empty())
     return;
 

@@ -3,6 +3,7 @@
 #include "core/workers.hpp"
 
 #include "core/time.hpp"
+#include "draw.hpp"
 #include "tools/logger.hpp"
 #include "ui/layout.hpp"
 
@@ -54,14 +55,14 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     auto render_start = Time::Clock::now();
     auto block_until = render_start + MAX_REDRAW_HZ;
 
-    int row = 1;
-
     auto next_frame = sess.next_frame();
     if (next_frame.has_value()) {
       if (!board.inform_new_frame(std::move(next_frame.value())).has_value()) {
         Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
       }
     }
+
+    Tools::Draw::border_with_title(board_plane, "Telemetry");
 
     board.draw_columns();
     board.draw_event_info(event_info_plane);
@@ -74,8 +75,6 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     std::this_thread::sleep_until(block_until);
 
     Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
-
-    // render_hz = 1000.0 / gap.count();
 
     last_tick = Time::Clock::now();
   }
