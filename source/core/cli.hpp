@@ -235,6 +235,14 @@ struct LongOptVisitor {
 
 }; // namespace ElementVisitors
 
+// For pre-made handlers which might be used multiple times
+namespace Handlers {
+static inline std::function<std::string_view(std::string_view const)>
+identity() {
+  return [](std::string_view const s) { return s; };
+}
+}; // namespace Handlers
+
 class Parser {
 private:
   std::vector<Arg> _args{};
