@@ -13,7 +13,7 @@
 
 namespace Tools::Draw {
 
-static constexpr std::wstring_view PROGBAR_CHARS_FULL_HEIGHT = L"▏▎▍▌▋▊▉";
+static constexpr std::wstring_view PROGBAR_CHARS_FULL_HEIGHT = L" ▏▎▍▌▋▊▉";
 static constexpr std::wstring_view PROGBAR_CHARS_NARROW = L"╌┄┈";
 
 enum class BarType {

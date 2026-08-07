@@ -271,12 +271,13 @@ void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
   put_simple_field("Flag Status", _event_info.flag_status);
   put_simple_field(
       "Laps",
-      std::format("{} / {}",
-                  _event_info.completed_laps.has_value()
-                      ? std::format("{}", _event_info.completed_laps.value())
-                      : "--",
-                  _event_info.total_laps.has_value()
-                      ? std::format("{}", _event_info.total_laps.value())
-                      : "--"));
+      std::format(
+          "{} / {}",
+          _event_info.completed_laps.has_value()
+              ? std::format("{}", _event_info.completed_laps.value() + 1)
+              : "--",
+          _event_info.total_laps.has_value()
+              ? std::format("{}", _event_info.total_laps.value())
+              : "--"));
 }
 }; // namespace Telemetry
