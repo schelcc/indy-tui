@@ -11,6 +11,8 @@ using TimePoint = Clock::time_point;
 
 namespace Duration {
 
+using UIntHour = std::chrono::duration<size_t, std::ratio<3600>>;
+using UIntMin = std::chrono::duration<size_t, std::ratio<60>>;
 using UIntSec = std::chrono::duration<size_t, std::ratio<1>>;
 using UIntMilliSec = std::chrono::duration<size_t, std::ratio<1, 1000>>;
 
