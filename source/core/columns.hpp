@@ -37,9 +37,6 @@ struct Rank {
 };
 
 struct DriverName {
-  // std::string operator()(Telemetry::DriverTelemetry const &d) {
-  //   return std::format("{:>23}", d.get_name());
-  // }
 
   UI::String operator()(Telemetry::DriverTelemetry const &d) {
     return (d.in_pit
@@ -75,13 +72,14 @@ struct LastPit {
 };
 
 struct Throttle {
-  std::wstring operator()(Telemetry::DriverTelemetry const &d) {
-    return Tools::Draw::prog_bar(
-        (d._telemetry.has_throttle()
-             ? static_cast<double>(d._telemetry.throttle())
-             : 0.0) /
-            100,
-        8);
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    return UI::String(Tools::Draw::prog_bar(
+                          (d._telemetry.has_throttle()
+                               ? static_cast<double>(d._telemetry.throttle())
+                               : 0.0) /
+                              100,
+                          8),
+                      UI::Color::GRAY_HARD);
   }
 
   static constexpr std::string_view COL_NAME = "Throttle";
@@ -102,6 +100,81 @@ struct Brake {
 
   static constexpr std::string_view COL_NAME = "Brake";
   static constexpr int COL_WIDTH = 8;
+};
+
+struct Gap {
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    return UI::String(std::format("{:>9}", d._results.has_behindleader()
+                                               ? d._results.behindleader()
+                                               : "--"));
+  }
+
+  static constexpr std::string_view COL_NAME = "Gap";
+  static constexpr int COL_WIDTH = 9;
+};
+
+struct Interval {
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    return UI::String(std::format("{:>9}", d._results.has_gappreceding()
+                                               ? d._results.gappreceding()
+                                               : "--"));
+  }
+
+  static constexpr std::string_view COL_NAME = "Interval";
+  static constexpr int COL_WIDTH = 9;
+};
+
+struct LapsSincePit {
+  std::string operator()(Telemetry::DriverTelemetry const &d) {
+    return d._results.has_sincepitlaps()
+               ? std::format("{:>5}", d._results.sincepitlaps())
+               : std::format("{:>5}", "--");
+  }
+
+  static constexpr std::string_view COL_NAME = "LSP";
+  static constexpr int COL_WIDTH = 5;
+};
+
+struct TireType {
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    if (!d._results.has_tiretype())
+      return UI::String(std::format("{:>5}", "--"));
+
+    auto const &tire = d._results.tiretype();
+    if (tire == "P")
+      return UI::String("P", UI::Color::BLACK_SOFT);
+    else if (tire == "A")
+      return UI::String("A", UI::Color::RED_SOFT);
+    else
+      return UI::String(tire);
+  }
+  static constexpr std::string_view COL_NAME = "Tire";
+  static constexpr int COL_WIDTH = 5;
+};
+
+struct P2P {
+  std::string operator()(Telemetry::DriverTelemetry const &d) {
+    return std::format(
+        "{:>3}/{:>3}/{:>5}",
+        d._telemetry.has_otremain() ? d._telemetry.otremain() : 0,
+        d._telemetry.has_otevent() ? d._telemetry.otevent() : 0,
+        d._telemetry.has_otstatus() ? static_cast<int>(d._telemetry.otstatus())
+                                    : -1);
+  }
+
+  static constexpr std::string_view COL_NAME = "P2P";
+  static constexpr int COL_WIDTH = 13;
+};
+
+struct LapDist {
+  std::string operator()(Telemetry::DriverTelemetry const &d) {
+    return std::format("{:>10.5f}", d._telemetry.has_lapdistance()
+                                        ? d._telemetry.lapdistance()
+                                        : -1.0);
+  }
+
+  static constexpr std::string_view COL_NAME = "Dist";
+  static constexpr int COL_WIDTH = 16;
 };
 
 }; // namespace Columns

@@ -1,5 +1,6 @@
 #include <memory>
 
+#include "columns.hpp"
 #include "core/workers.hpp"
 
 #include "core/time.hpp"
@@ -40,16 +41,17 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   auto telem_status_plane = header_info_container.add_block(Segments(1));
   auto event_info_plane = header_info_container.add_block(Segments(2));
 
-  if (!board.add_column(board_plane, Columns::Rank{}))
-    return;
-  if (!board.add_column(board_plane, Columns::DriverName{}))
-    return;
-  if (!board.add_column(board_plane, Columns::Speed{}))
-    return;
-  if (!board.add_column(board_plane, Columns::Throttle{}))
-    return;
-  if (!board.add_column(board_plane, Columns::Brake{}))
-    return;
+  assert(board.add_column(board_plane, Columns::Rank{}));
+  assert(board.add_column(board_plane, Columns::DriverName{}));
+  assert(board.add_column(board_plane, Columns::Speed{}));
+  assert(board.add_column(board_plane, Columns::Throttle{}));
+  assert(board.add_column(board_plane, Columns::Brake{}));
+  assert(board.add_column(board_plane, Columns::Gap{}));
+  assert(board.add_column(board_plane, Columns::Interval{}));
+  assert(board.add_column(board_plane, Columns::LapsSincePit{}));
+  assert(board.add_column(board_plane, Columns::TireType{}));
+  assert(board.add_column(board_plane, Columns::P2P{}));
+  assert(board.add_column(board_plane, Columns::LapDist{}));
 
   while (!stop_tok.stop_requested()) {
     auto render_start = Time::Clock::now();
