@@ -316,8 +316,6 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
   if (delay_res.has_value())
     delay_s = std::format("{} s", delay_res.value());
 
-  put_simple_field("Configured delay", delay_s);
-
   double msg_rate = 1000 / _msg_recv_period.load().count();
   UI::Color msg_rate_color;
   if (msg_rate > 9.0)
@@ -327,10 +325,18 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
   else
     msg_rate_color = UI::Color::RED_SOFT;
 
-  put_simple_field(
-      "Observed message rate",
-      UI::String(std::format("{:5.2f} Hz", msg_rate), msg_rate_color));
-  // std::format("{:5.2f} Hz", 1000 / _msg_recv_period.load().count()));
+  UI::String msg_rate_str(std::format("{:5.2f} Hz", msg_rate), msg_rate_color);
+  Time::Duration::DblMilliSec since_last_msg =
+      Time::Clock::now() - _last_msg_time.load();
+
+  if (since_last_msg.count() > 200)
+    msg_rate_str += UI::String(std::format(" (last msg. received {:.2f}s ago)",
+                                           since_last_msg.count() / 1000),
+                               UI::Color::GRAY_HARD, UI::Style::ITALIC);
+
+  put_simple_field("Observed message rate", msg_rate_str);
+
+  put_simple_field("Configured delay", delay_s);
 
   if (delay_res.value_or(0) > 0) {
     double delay_pct =
