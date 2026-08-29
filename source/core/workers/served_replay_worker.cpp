@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include <ixwebsocket/IXWebSocketServer.h>
+#include <thread>
 
 #include "ErpMessage.pb.h"
 #include "base64.hpp"
@@ -41,11 +42,6 @@ void ServedReplayWorker::operator()(std::stop_token stop) {
         const std::string ip = conn_state->getRemoteIp();
         std::println("Connection opened for IP {}", ip);
 
-        // {
-        //   std::scoped_lock lock(_send_threads_mtx);
-        //   assert(!_send_threads.contains(ip.data()));
-        //   _send_threads[ip.data()] = Session(session_file, ip, web_socket);
-        // };
         std::shared_ptr<Session> sess =
             std::make_shared<Session>(session_file, ip, web_socket);
 
@@ -54,14 +50,9 @@ void ServedReplayWorker::operator()(std::stop_token stop) {
           return;
 
         sock->setOnMessageCallback([sess](const ix::WebSocketMessagePtr &msg) {
-          // const std::string_view ip = connectionState->getRemoteIp();
-          // std::scoped_lock lock(_send_threads_mtx);
-
           // Handle for a new session being created
           if (msg->type == ix::WebSocketMessageType::Open) {
-            // std::println("Got open for IP {}", ip);
             sess->start();
-            // _send_threads[ip.data()].start();
             return;
           }
 
@@ -70,18 +61,7 @@ void ServedReplayWorker::operator()(std::stop_token stop) {
                 msg->type == ix::WebSocketMessageType::Error))
             return;
 
-          // Find the existing session, doing nothing if the session doesn't
-          // exist
-          // auto existing_session = _send_threads.find(ip.data());
-          // if (existing_session == _send_threads.end())
-          //   return;
-
           sess->stop();
-
-          // Only here if we want to kill an existing session
-          // existing_session->second.stop();
-
-          // _send_threads.erase(ip.data());
         });
       });
 
@@ -107,10 +87,6 @@ void ServedReplayWorker::Session::start() {
     std::string line{};
     proto::telemetry::ErpMessage msg{};
 
-    // int64_t last_datetime = 0;
-    // std::string last_timeofday = "";
-    // Time::TimePoint last_sendtime;
-
     auto to_duration =
         [](std::string_view const ts) -> Time::Duration::UIntMilliSec {
       // "HH:MM:SS:MS"
@@ -122,52 +98,15 @@ void ServedReplayWorker::Session::start() {
              Time::Duration::UIntSec(sec) + Time::Duration::UIntMilliSec(msec);
     };
 
-    Time::Duration::UIntMilliSec elapsed_time(0u);
-    std::optional<Time::Duration::UIntMilliSec> start_time = {};
-
-    Time::TimePoint loop_time = Time::Clock::now();
-
     while (!stop.stop_requested() && !socket.expired()) {
-      Time::TimePoint now = Time::Clock::now();
-      elapsed_time += std::chrono::duration_cast<Time::Duration::UIntMilliSec>(
-          now - loop_time);
-      loop_time = now;
 
       if (std::getline(session_stream, line)) {
         msg.ParseFromString(Tools::b64_decode(line));
 
-        auto cur_send = to_duration(msg.heartbeats().Get(0).timeofday());
-
-        if (!start_time.has_value()) {
-          start_time
-        }
-
-        // if (last_timeofday.empty()) {
-        //   last_timeofday = msg.heartbeats().Get(0).timeofday();
-        //   last_sendtime = Time::Clock::now();
-        //   continue;
-        // }
-
-        // std::string cur_timeofday = msg.heartbeats().Get(0).timeofday();
-
-        // // Block until this message is ready to be sent
-        // if (last_timeofday != cur_timeofday)
-        //   std::this_thread::sleep_until(
-        //       last_sendtime +
-        //       (to_duration(cur_timeofday) - to_duration(last_timeofday)));
-
-        // last_sendtime = Time::Clock::now();
-        // last_timeofday = std::move(cur_timeofday);
-
-        // auto const& hbeat = msg.heartbeats().Get(0);
-        // int64_t cur_datetime = hbeat.datetime();
-
-        // if (last_datetime == 0) {
-        //   last_datetime = cur_datetime;
-        // }
-
         auto sock = socket.lock();
         sock->send(std::format("\"data\":\"{}\"}}}}}}}}", line));
+
+        std::this_thread::sleep_for(Time::Duration::UIntMilliSec(100));
       }
     }
 
