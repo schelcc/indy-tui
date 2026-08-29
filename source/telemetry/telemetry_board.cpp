@@ -26,6 +26,7 @@
 
 #include "ErpMessage.pb.h"
 #include "time.hpp"
+#include "ui/ui.hpp"
 
 using proto::telemetry::ErpMessage;
 
@@ -154,8 +155,20 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
                     driver.take_new_telemetry(std::move(iter));
 
                     // Each-update tasks/checks
-                    if (driver._telemetry.has_isinpit())
-                      driver.in_pit.store(driver._telemetry.isinpit());
+                    if (driver._telemetry.has_isinpit()) {
+                      driver.in_pit_count +=
+                          static_cast<size_t>(driver._telemetry.isinpit());
+
+                      if (driver._telemetry.isinpit()) {
+                        driver.in_pit_count++;
+
+                        driver.in_pit = driver.in_pit_count >=
+                                        DriverTelemetry::MIN_IN_PIT_CNT;
+                      } else {
+                        driver.in_pit_count = 0;
+                        driver.in_pit = false;
+                      }
+                    }
                   });
   }
 

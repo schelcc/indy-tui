@@ -28,6 +28,9 @@ public:
   static constexpr size_t STALE_TELEM_THRESH = 5;
 
 public:
+  static constexpr size_t MIN_IN_PIT_CNT = 25;
+
+  std::atomic_size_t in_pit_count = 0;
   std::atomic_bool in_pit = true;
 
   /** @brief Increment the telemetry stale count. */
