@@ -68,6 +68,9 @@ private:
 
   std::atomic<Status> _status = Status::NOT_STARTED;
 
+  std::atomic<Time::TimePoint> _last_msg_time;
+  std::atomic<Time::Duration::DblMilliSec> _msg_recv_period;
+
   std::vector<std::jthread> _threads{};
 
   /** @brief Callback for message events during initial setup of session. */

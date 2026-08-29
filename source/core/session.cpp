@@ -246,6 +246,9 @@ void Session::init_on_message(const ix::WebSocketMessagePtr &msg) {
   } else if (msg->str.contains(R"("start_ack")")) {
     Log::Debug("Received start ack, starting now...", "SESS-SOCKET");
 
+    // Set the first message recv timestamp
+    _last_msg_time = Time::Clock::now();
+
     // Change callbacks over to started callbacks
     set_callbacks(Status::STARTED, _socket);
 
@@ -257,6 +260,11 @@ void Session::init_on_message(const ix::WebSocketMessagePtr &msg) {
 void Session::on_message(const ix::WebSocketMessagePtr &msg) {
   if (msg->str.empty())
     return;
+
+  // Calculate message recv period
+  auto now = Time::Clock::now();
+  _msg_recv_period = now - _last_msg_time.load();
+  _last_msg_time = now;
 
   auto payload = parse_payload(msg->str);
   if (!payload.has_value())

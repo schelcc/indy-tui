@@ -25,9 +25,9 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   using namespace Layout;
   Container<Direction::VERTICAL, Segments(13)> main_container(std_plane);
 
-  auto header_plane = main_container.add_block(Segments(3));
+  auto header_plane = main_container.add_block(Segments(4));
   auto board_plane = main_container.add_block(Segments(8));
-  auto footer_plane = main_container.add_block(Segments(2));
+  auto footer_plane = main_container.add_block(Segments(1));
 
   // Build header layout
   Container<Direction::HORIZONTAL, Segments(3)> header_container(header_plane);
