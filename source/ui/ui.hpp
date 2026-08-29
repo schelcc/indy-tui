@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <ncpp/CellStyle.hh>
@@ -168,5 +169,31 @@ template <typename S1, typename S2>
 String operator+(S1 &&s1, S2 &&s2) {
   return String(std::forward<S1>(s1)).append(std::forward<S2>(s2));
 }
+
+struct SimpleTableSketcher {
+  std::shared_ptr<ncpp::Plane> plane;
+  size_t &row;
+
+  SimpleTableSketcher(std::shared_ptr<ncpp::Plane> p, size_t &r)
+      : plane(p), row(r) {};
+
+  template <typename FieldName, typename Field>
+    requires(Core::IsOneOf<std::remove_cvref_t<Field>, UI::String, std::string,
+                           std::wstring> ||
+             requires(Field f) { f.value_or("--"); })
+  void operator()(FieldName const field_name, Field const &field) {
+    UI::String field_val;
+
+    // If the field is an optional, do value_or on it, otherwise just copy it
+    if constexpr (requires { field.value_or("--"); }) {
+      field_val = field.value_or("--");
+    } else {
+      field_val = field;
+    }
+
+    UI::String row_str = UI::String{field_name} + ": " + field_val;
+    row_str.apply_to_plane(plane, row++, 1);
+  }
+};
 
 }; // namespace UI

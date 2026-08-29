@@ -240,26 +240,7 @@ void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
 
   using Tools::Draw::trunc_str;
 
-  // Add line for the given field w/ the fstr "<field>: {}"
-  auto put_simple_field =
-      [&plane,
-       &row](std::string_view const field_name,
-             Core::IsOneOf<std::string, std::optional<std::string>> auto const
-                 &field) -> void {
-    std::string field_val{""};
-
-    if constexpr (std::is_same_v<std::remove_cvref_t<decltype(field)>,
-                                 std::string>) {
-      field_val = field;
-    } else {
-      field_val = field.value_or("--");
-    }
-
-    plane->putstr(row++, 1,
-                  trunc_str(std::format("{}: {}", field_name, field_val),
-                            plane->get_dim_x() - 2)
-                      .data());
-  };
+  UI::SimpleTableSketcher put_simple_field(plane, row);
 
   plane->putstr(row++, 1, "Event Information");
 
@@ -268,7 +249,25 @@ void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
   put_simple_field("Session Type", _event_info.session_type);
   put_simple_field("Session Status", _event_info.session_status);
   put_simple_field("Track Time", _event_info.track_time);
-  put_simple_field("Flag Status", _event_info.flag_status);
+
+  UI::Color flag_color = UI::Color::NONE;
+  if (_event_info.flag_status.has_value()) {
+    std::string &cur_flag = _event_info.flag_status.value();
+    if (cur_flag == "GREEN")
+      flag_color = UI::Color::GREEN_SOFT;
+    else if (cur_flag == "YELLOW")
+      flag_color = UI::Color::YELLOW_SOFT;
+    else if (cur_flag == "RED")
+      flag_color = UI::Color::RED_SOFT;
+    else if (cur_flag == "WARM")
+      flag_color = UI::Color::PURPLE_SOFT;
+  }
+
+  put_simple_field("Flag Status",
+                   UI::String(_event_info.flag_status.value_or("--"),
+                              flag_color, UI::Style::BOLD) +
+                       "         ");
+
   put_simple_field(
       "Laps",
       std::format(

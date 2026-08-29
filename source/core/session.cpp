@@ -7,6 +7,7 @@
 #include "telemetry/telemetry_frame.hpp"
 #include "telemetry/telemetry_queue.hpp"
 #include "time.hpp"
+#include "ui/ui.hpp"
 #include <csignal>
 #include <ncpp/Plane.hh>
 #include <optional>
@@ -285,26 +286,7 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
 
   size_t row = 0;
 
-  auto put_simple_field =
-      [&plane,
-       &row](std::string_view const field_name,
-             Core::IsOneOf<std::string, std::optional<std::string>> auto const
-                 &field) -> void {
-    std::string field_val{""};
-
-    if constexpr (std::is_same_v<std::remove_cvref_t<decltype(field)>,
-                                 std::string>) {
-      field_val = field;
-    } else {
-      field_val = field.value_or("--");
-    }
-
-    plane->putstr(
-        row++, 1,
-        Tools::Draw::trunc_str(std::format("{}: {}", field_name, field_val),
-                               plane->get_dim_x() - 2)
-            .data());
-  };
+  UI::SimpleTableSketcher put_simple_field(plane, row);
 
   // Title
   plane->putstr(row++, 1,
@@ -335,6 +317,20 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
     delay_s = std::format("{} s", delay_res.value());
 
   put_simple_field("Configured delay", delay_s);
+
+  double msg_rate = 1000 / _msg_recv_period.load().count();
+  UI::Color msg_rate_color;
+  if (msg_rate > 9.0)
+    msg_rate_color = UI::Color::GREEN_SOFT;
+  else if (msg_rate > 8.0)
+    msg_rate_color = UI::Color::YELLOW_SOFT;
+  else
+    msg_rate_color = UI::Color::RED_SOFT;
+
+  put_simple_field(
+      "Observed message rate",
+      UI::String(std::format("{:5.2f} Hz", msg_rate), msg_rate_color));
+  // std::format("{:5.2f} Hz", 1000 / _msg_recv_period.load().count()));
 
   if (delay_res.value_or(0) > 0) {
     double delay_pct =
