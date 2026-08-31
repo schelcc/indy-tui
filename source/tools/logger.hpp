@@ -1,11 +1,22 @@
 #pragma once
 #include <array>
+#include <atomic>
+#include <cassert>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <ios>
+#include <iostream>
 #include <mutex>
-#include <print>
-#include <source_location>
+#include <pthread.h>
+#include <shared_mutex>
 #include <string_view>
+#include <thread>
 #include <tuple>
-#include <type_traits>
+
+#include "time.hpp"
+#include "tools/queue.hpp"
+#include "tools/uuid.hpp"
 
 namespace Tools {
 
@@ -21,7 +32,64 @@ public:
   } _level;
 
 private:
-  Log() = default;
+  ThreadSafe::Queue<std::string, 20> _write_queue;
+
+  std::thread _write_thread;
+
+  // std::atomic_bool keep_logging{true};
+  std::atomic_flag keep_logging{true};
+
+  std::mutex _log_out_mtx;
+  std::string_view _log_out;
+
+  Log() {
+
+    _write_thread = std::thread{[this] {
+      auto tmp_name = "tmp_log_" + uuid() + ".log";
+
+      auto write_out = std::fstream(tmp_name);
+
+      if (!write_out.is_open()) {
+        write_out.clear();
+        write_out.open(tmp_name, std::ios::out);
+        write_out.close();
+        write_out.open(tmp_name);
+      }
+
+      write_out.clear();
+
+      size_t flush_count = 0;
+
+      while (keep_logging.test() || !_write_queue.empty()) {
+        auto line = _write_queue.try_dequeue_for(Time::Duration::UIntSec(1));
+        if (!line.has_value())
+          continue;
+        write_out << line.value();
+        if (flush_count++ % 50 == 0)
+          write_out.flush();
+      }
+
+      write_out.close();
+
+      {
+        std::scoped_lock lock(_log_out_mtx);
+        try {
+          std::filesystem::rename(tmp_name, _log_out);
+        } catch (std::filesystem::filesystem_error &e) {
+          std::cerr << std::format("Writing log to '{}' failed: {}", _log_out,
+                                   e.what());
+        }
+      }
+    }};
+    pthread_setname_np(_write_thread.native_handle(), "Log writer");
+  };
+
+  ~Log() {
+
+    keep_logging.clear();
+
+    _write_thread.join();
+  }
 
   static Log &Get() {
     static Log logger{};
@@ -32,9 +100,11 @@ private:
       "NONE", "ERROR", "WARN", "INFO", "DEBUG", "DEBUG-EX"};
 
   void log(Level kind, std::string_view msg, std::string_view source = "") {
+
     if (kind <= _level) {
-      char delim = source.length() > 0 ? ':' : '\0';
-      std::println("[{}{}{}] {}", LEVEL_STR[kind], delim, source, msg);
+      _write_queue.enqueue(std::format("[{}{}{}] {}\n", LEVEL_STR[kind],
+                                       source.length() > 0 ? ':' : ' ', source,
+                                       msg));
     }
   }
 
@@ -49,21 +119,34 @@ public:
 
   static void SetLevel(Level level) { Get()._level = level; }
 
+  static void SetOut(std::string_view const fname) {
+
+    std::scoped_lock lock(Get()._log_out_mtx);
+    Get()._log_out = fname;
+  }
+
   static void Info(std::string_view msg, std::string_view source = "") {
+
     Get().log(INFO, msg, source);
   }
   static void Warn(std::string_view msg, std::string_view source = "") {
+
     Get().log(WARN, msg, source);
   }
   static void Debug(std::string_view msg, std::string_view source = "") {
+
     Get().log(DEBUG, msg, source);
   }
   static void Debug2(std::string_view msg, std::string_view source = "") {
+
     Get().log(DEBUG2, msg, source);
   }
   static void Error(std::string_view msg, std::string_view source = "") {
+
     Get().log(ERROR, msg, source);
   }
+
+  // [[nodiscard]] static double GetWriteRate() { return Get()._log_hz.load(); }
 };
 
 template <typename T>
@@ -121,6 +204,64 @@ private:
   static void unlock(Muts &...muts) { recursed_unlock(muts...); }
 
   std::tuple<Muts &...> _mutexes;
+  std::string_view _source_ref;
+};
+
+template <Lockable Mut> struct LoggedSharedLock {
+  LoggedSharedLock(std::string_view source_ref, Mut &mut)
+      : _mut(mut), _source_ref(source_ref) {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Block for shared-lock at {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+    _lock = std::shared_lock(_mut);
+    _lock.lock();
+#ifndef NDEBUG
+    Log::Debug2(std::format("Shared-lock acquired at {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+  }
+
+  ~LoggedSharedLock() {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Release shared lock for {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+    _lock.unlock();
+  }
+
+private:
+  Mut &_mut;
+  std::shared_lock<Mut> _lock;
+  std::string_view _source_ref;
+};
+
+template <Lockable Mut> struct LoggedUniqueLock {
+  LoggedUniqueLock(std::string_view source_ref, Mut &mut)
+      : _mut(mut), _source_ref(source_ref) {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Block for unique-lock at {}", _source_ref),
+                "UNIQUE-LOCK");
+#endif
+    _lock = std::unique_lock(mut);
+    _lock.lock;
+#ifndef NDEBUG
+    Log::Debug2(std::format("Unique-lock acquired at {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+  }
+
+  ~LoggedUniqueLock() {
+#ifndef NDEBUG
+    Log::Debug2(std::format("Release unique lock for {}", _source_ref),
+                "SHARED-LOCK");
+#endif
+    _lock.unlock();
+  }
+
+private:
+  Mut &_mut;
+  std::unique_lock<Mut> _lock;
   std::string_view _source_ref;
 };
 

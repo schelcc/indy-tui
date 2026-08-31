@@ -5,6 +5,7 @@
 
 namespace Tools {
 
+/// @brief Lookup mapping chars to their base64-encoded value. For decoding.
 static constexpr std::array<size_t, 256> B64_ALPH{
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -21,6 +22,8 @@ static constexpr std::array<size_t, 256> B64_ALPH{
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0};
 
+/// @brief Lookup mapping base-64 encoded integer value to correspnding base-64
+/// character. For encoding.
 static constexpr std::array<char, 64> ENC_B64{
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
     'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',

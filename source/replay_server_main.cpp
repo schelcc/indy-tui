@@ -16,6 +16,7 @@
 
 int main() {
   // https://machinezone.github.io/IXWebSocket/usage/#websocket-server-api
+  Tools::Log::SetOut("indyreplay.log");
 
   int port = 8080;
   std::string_view host{"127.0.0.1"};
@@ -49,6 +50,11 @@ int main() {
 
               telem_msg.ParseFromString(Tools::b64_decode(line));
 
+              std::println("Sent w/ TELEM#[{}] OVRRES#[{}] CMPLAP#[{}]",
+                           telem_msg.telemetrymessages_size(),
+                           telem_msg.overallresults_size(),
+                           telem_msg.completedlapresult_size());
+
               if (telem_msg.heartbeats_size() > 0) {
                 auto &hbts_0th = telem_msg.heartbeats().Get(0);
                 Tools::Log::Debug(
@@ -71,6 +77,7 @@ int main() {
 
   auto res = server.listen();
   Tools::Log::Debug("Listening");
+  std::println("Listening");
   if (!res.first)
     return -1;
 

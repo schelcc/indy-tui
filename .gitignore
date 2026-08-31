@@ -4,6 +4,11 @@ build/*
 # Testing artifacts
 *.session
 *.bin
+*.txt
+bak.*
+
+# Logging artifacts
+*.log
 
 ### Editor artifacts
 
