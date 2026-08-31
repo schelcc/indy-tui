@@ -1,8 +1,10 @@
 #include <chrono>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <print>
 #include <stop_token>
+#include <string>
 #include <string_view>
 
 #include <ixwebsocket/IXWebSocketServer.h>
@@ -77,7 +79,30 @@ void ServedReplayWorker::operator()(std::stop_token stop) {
 ServedReplayWorker::Session::Session(std::string const &fname_,
                                      std::string const &ip_,
                                      std::weak_ptr<ix::WebSocket> socket_)
-    : ip(ip_), socket(socket_), fname(fname_) {}
+    : ip(ip_), socket(socket_), fname(fname_), recording_props({}) {}
+
+void ServedReplayWorker::Session::parse_recording_props(std::ifstream &fs) {
+  // Fill in defaults
+  recording_props["INDY-TUI_RECORDING_KIND"] = "UNTIMED";
+
+  auto oldpos = fs.tellg();
+  std::string line;
+  while (std::getline(fs, line)) {
+    if (!line.contains(':')) {
+      fs.seekg(oldpos);
+      break;
+    }
+
+    auto res = Tools::Strings::SplitAtFirst(line, ':');
+
+    if (res.has_value()) {
+      auto [key, value] = res.value();
+      recording_props[std::string(key)] = std::string(value);
+    }
+
+    oldpos = fs.tellg();
+  }
+}
 
 void ServedReplayWorker::Session::start() {
   std::println("Start replay session for IP {}", ip);
@@ -87,30 +112,56 @@ void ServedReplayWorker::Session::start() {
     std::string line{};
     proto::telemetry::ErpMessage msg{};
 
-    auto to_duration =
-        [](std::string_view const ts) -> Time::Duration::UIntMilliSec {
-      // "HH:MM:SS:MS"
-      size_t hr = std::stoul(ts.substr(0, 2).data());
-      size_t min = std::stoul(ts.substr(3, 5).data());
-      size_t sec = std::stoul(ts.substr(6, 8).data());
-      size_t msec = std::stoul(ts.substr(9).data());
-      return Time::Duration::UIntHour(hr) + Time::Duration::UIntMin(min) +
-             Time::Duration::UIntSec(sec) + Time::Duration::UIntMilliSec(msec);
-    };
+    parse_recording_props(session_stream);
+    bool timed_recording =
+        (recording_props["INDY-TUI_RECORDING_KIND"] == "TIMED");
+
+    Time::TimePoint start = Time::Clock::now();
+    Time::TimePoint block_point = start;
 
     while (!stop.stop_requested() && !socket.expired()) {
+      std::string_view payload;
 
       if (std::getline(session_stream, line)) {
-        msg.ParseFromString(Tools::b64_decode(line));
+        if (timed_recording) {
+          // Skip any non-payload lines
+          if (!line.contains(','))
+            continue;
+
+          // TODO: Figure out what to do about errors in replay
+          auto [elapsed_parsed, payload_parsed] =
+              Tools::Strings::SplitAtFirst(line, ',').value();
+
+          auto [sec_parsed, msec_parsed] =
+              Tools::Strings::SplitAtFirst(elapsed_parsed, '.').value();
+          size_t sec = std::stoul(std::string(sec_parsed));
+          size_t msec = std::stoul(std::string(
+              msec_parsed.substr(0, std::min(3ul, msec_parsed.size()))));
+
+          block_point = start + Time::Duration::UIntSec(sec) +
+                        Time::Duration::UIntMilliSec(msec);
+
+          payload = payload_parsed;
+        } else {
+          block_point += Time::Duration::UIntMilliSec(100);
+          payload = line;
+          start = Time::Clock::now();
+        }
 
         auto sock = socket.lock();
-        sock->send(std::format("\"data\":\"{}\"}}}}}}}}", line));
+        sock->send(std::format("\"data\":\"{}\"}}}}}}}}", payload));
 
-        std::this_thread::sleep_for(Time::Duration::UIntMilliSec(100));
+        std::this_thread::sleep_until(block_point);
+      } else {
+        std::println("Reached end of recording, closing session.");
+        break;
       }
     }
 
     session_stream.close();
+
+    auto sock = socket.lock();
+    sock->close();
   }};
 }
 

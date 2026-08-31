@@ -14,7 +14,8 @@
 #include <ncpp/NotCurses.hh>
 
 #include "core/session.hpp"
-#include "time.hpp"
+#include "core/time.hpp"
+#include "tools/strings.hpp"
 
 namespace Workers {
 
@@ -63,6 +64,8 @@ private:
     std::weak_ptr<ix::WebSocket> socket;
     std::string fname;
 
+    std::unordered_map<std::string, std::string> recording_props;
+
     void start();
     void stop();
     void stop_and_join();
@@ -71,6 +74,9 @@ private:
             std::weak_ptr<ix::WebSocket>);
 
     Session() = delete;
+
+  private:
+    void parse_recording_props(std::ifstream &);
   };
 
   std::unique_ptr<ix::WebSocketServer> _server;
