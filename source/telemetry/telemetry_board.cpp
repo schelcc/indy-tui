@@ -192,6 +192,15 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
                       .take_new_lap(std::move(iter));
                 });
 
+  std::for_each(message.mutable_linecrossings()->begin(),
+                message.mutable_linecrossings()->end(),
+                [this, &check_and_populate](auto iter) {
+                  assert(check_and_populate(iter));
+
+                  _drivers.at(_driver_map.at(iter.carnumber()))
+                      .take_new_crossing(std::move(iter));
+                });
+
   return {};
 }
 
@@ -206,6 +215,20 @@ void TelemetryBoard::draw_columns() {
 
   // We've changed the order of the drivers vec, so reassociate the LUT
   reassociate_drivers();
+
+  // Calculate each driver's gap to leader
+  // {
+  //   std::shared_lock lock(_driver_vec_mtx);
+  //   if (_drivers.size() >= 2) {
+  //     auto &leader = _drivers.front();
+  //     size_t prev_idx = 0;
+  //     std::for_each(std::begin(_drivers) + 1, std::end(_drivers),
+  //                   [&leader, &prev_idx, this](DriverTelemetry &d) {
+  //                     d.calculate_gap(leader);
+  //                     // d.calculate_interval(_drivers.at(prev_idx++));
+  //                   });
+  //   }
+  // }
 
   std::shared_lock lock(_column_planes_mtx);
   auto v = std::views::zip(_column_planes, _columns);

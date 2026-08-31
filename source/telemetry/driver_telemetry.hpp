@@ -1,6 +1,6 @@
 #pragma once
 
-#include <expected>
+#include <shared_mutex>
 
 #include "ErpMessage.pb.h"
 
@@ -19,6 +19,15 @@ public:
   proto::telemetry::ErpTelemetry _telemetry{};
   proto::telemetry::ErpOverallResults _results{};
   proto::telemetry::ErpCompletedLapResult _completed_lap{};
+
+  std::unordered_map<std::string, size_t> _line_crossings{};
+  std::shared_mutex _line_crossings_mtx;
+
+  std::optional<std::string> _last_line_crossing = {};
+  mutable std::shared_mutex _last_line_crossing_mtx;
+
+  std::atomic<double> _gap = 0;
+  std::atomic<double> _interval = 0;
 
   // Number of frames since we last got a telemetry update. Used to "invalidate"
   // stale telemetry
@@ -53,9 +62,17 @@ public:
   /** @brief Take in the given completed lap results. */
   void take_new_lap(proto::telemetry::ErpCompletedLapResult &&) noexcept;
 
+  /** @brief Take in and update the line crossings. */
+  void take_new_crossing(proto::telemetry::ErpLineCrossingMessage &&) noexcept;
+
+  void calculate_gap(DriverTelemetry &) noexcept;
+  void calculate_interval(DriverTelemetry &) noexcept;
+
   [[nodiscard]] int32_t get_rank() const;
   [[nodiscard]] std::string get_name() const;
   [[nodiscard]] double get_speed() const;
+  [[nodiscard]] double get_gap() const { return _gap.load(); }
+  [[nodiscard]] double get_interval() const { return _interval.load(); }
 
   // Sort options
 

@@ -5,6 +5,7 @@
 
 #include <ncpp/Palette.hh>
 #include <ncpp/Plane.hh>
+#include <shared_mutex>
 #include <type_traits>
 
 #include "telemetry/driver_telemetry.hpp"
@@ -102,6 +103,16 @@ struct Brake {
   static constexpr int COL_WIDTH = 8;
 };
 
+struct LastTimingLine {
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    std::shared_lock lock(d._last_line_crossing_mtx);
+    return d._last_line_crossing.value_or("--");
+  }
+
+  static constexpr std::string_view COL_NAME = "Last Timeline";
+  static constexpr int COL_WIDTH = 15;
+};
+
 struct Gap {
   UI::String operator()(Telemetry::DriverTelemetry const &d) {
     return UI::String(std::format("{:>9}", d._results.has_behindleader()
@@ -110,6 +121,15 @@ struct Gap {
   }
 
   static constexpr std::string_view COL_NAME = "Gap";
+  static constexpr int COL_WIDTH = 9;
+};
+
+struct LiveGap {
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    return UI::String(std::format("{:>9}", d.get_gap()));
+  }
+
+  static constexpr std::string_view COL_NAME = "LiveGap";
   static constexpr int COL_WIDTH = 9;
 };
 
@@ -122,6 +142,15 @@ struct Interval {
 
   static constexpr std::string_view COL_NAME = "Interval";
   static constexpr int COL_WIDTH = 9;
+};
+
+struct LiveInterval {
+  UI::String operator()(Telemetry::DriverTelemetry const &d) {
+    return UI::String(std::format("{:>9}", d.get_interval()));
+  }
+
+  static constexpr std::string_view COL_NAME = "LiveInterval";
+  static constexpr int COL_WIDTH = 12;
 };
 
 struct LapsSincePit {
