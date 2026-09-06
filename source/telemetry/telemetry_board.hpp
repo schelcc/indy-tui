@@ -86,6 +86,7 @@ private:
     // Found in TrackInformation:
     std::optional<std::string> track_name = {};
     std::optional<std::string> track_type = {};
+    std::optional<size_t> num_checkpts = {};
 
     // Found in HeartBeat:
     std::optional<std::string> event_name = {};
