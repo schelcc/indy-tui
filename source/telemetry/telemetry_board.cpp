@@ -126,11 +126,16 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
 
       if (hbeat.has_totallaps())
         _event_info.total_laps = hbeat.totallaps();
+
+      if (hbeat.has_tracklength())
+        _event_info.lap_length =
+            std::stod(hbeat.tracklength()) * Units::METERS_PER_MILE;
     }
   }
 
   // Don't move on if we don't yet have track length
-  if (!_event_info.num_checkpts.has_value())
+  if (!_event_info.num_checkpts.has_value() ||
+      !_event_info.lap_length.has_value())
     return {};
 
   assert(_event_info.num_checkpts.value() > 0);
@@ -148,6 +153,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
       _driver_map[car_num] = _drivers.size();
       _drivers.emplace_back();
       _drivers.back().set_checkpoints(_event_info.num_checkpts.value());
+      _drivers.back().set_lap_length(_event_info.lap_length.value());
     }
 
     return true;

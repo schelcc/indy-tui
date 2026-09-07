@@ -98,6 +98,7 @@ private:
     std::optional<std::string> track_time = {};
     std::optional<int> completed_laps = {};
     std::optional<int> total_laps = {};
+    std::optional<double> lap_length = {};
 
     /** @brief Update fields given a parsed protobuf message. For fields only
      * found in per-driver entries, uses the first available driver.

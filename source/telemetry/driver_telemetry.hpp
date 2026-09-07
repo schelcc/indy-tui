@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <shared_mutex>
 
 #include "ErpMessage.pb.h"
@@ -44,6 +45,11 @@ public:
   // Number of frames since we last got a telemetry update. Used to "invalidate"
   // stale telemetry
   size_t _frames_since_telem = 0;
+
+  std::atomic<double> _lap_length = std::numeric_limits<double>::max();
+
+  // Fraction of total lap distance after which distance reset is available
+  static constexpr double LAP_DIST_RESET_PCT = 0.97;
 
   // Number of frames after which telemetry is considered stale
   static constexpr size_t STALE_TELEM_THRESH = 5;
@@ -96,6 +102,9 @@ public:
 
   /** @brief Configure the number of checkpoints which should be available. */
   void set_checkpoints(size_t const) noexcept;
+
+  /** @brief Configure the total lap length in meters. */
+  void set_lap_length(double const) noexcept;
 
   /** @brief Retrieve the last time this driver passed the given checkpoint
    * index, if available. */

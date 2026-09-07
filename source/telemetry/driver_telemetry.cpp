@@ -10,6 +10,20 @@ namespace Telemetry {
 
 void DriverTelemetry::take_new_telemetry(
     proto::telemetry::ErpTelemetry &&telem) noexcept {
+  // If decreasing lap distance, we must be above the allowed fraction of the
+  // total lap length, so if it's at or below the threshold we override the
+  // value with the previous one
+  if (_telemetry.has_lapdistance() &&
+      (telem.lapdistance() < _telemetry.lapdistance()) &&
+      (_telemetry.lapdistance() <= (_lap_length.load() * LAP_DIST_RESET_PCT)))
+    telem.set_lapdistance(_telemetry.lapdistance());
+
+  // Decreasing lap distance => Current lap distance is above reset threshold
+  assert(
+      !(_telemetry.lapdistance() > telem.lapdistance()) ||
+      (_telemetry.lapdistance() >= (_lap_length.load() * LAP_DIST_RESET_PCT)));
+
+  // Take in new telemetry
   _telemetry = std::move(telem);
   _car_num = _telemetry.carnumber();
   _frames_since_telem = 0;
@@ -158,6 +172,11 @@ void DriverTelemetry::set_checkpoints(size_t const num) noexcept {
   _dist_times = std::vector<Checkpoint>(num, Checkpoint{v, 0});
 }
 
+void DriverTelemetry::set_lap_length(double const length_meters) noexcept {
+  assert(length_meters > 0);
+  _lap_length = length_meters;
+}
+
 [[nodiscard]] std::optional<DriverTelemetry::Checkpoint>
 DriverTelemetry::get_checkpoint(size_t const checkpt) const {
   std::shared_lock lock(_dist_mtx);
@@ -208,6 +227,7 @@ DriverTelemetry::DriverTelemetry(DriverTelemetry &&d) noexcept {
   _dist_times = std::move(d._dist_times);
   _last_checkpt = std::move(d._last_checkpt);
   _cur_checkpt.store(d._cur_checkpt.load());
+  _lap_length.store(d._lap_length);
 }
 
 DriverTelemetry &DriverTelemetry::operator=(DriverTelemetry &&d) noexcept {
@@ -222,6 +242,7 @@ DriverTelemetry &DriverTelemetry::operator=(DriverTelemetry &&d) noexcept {
   _dist_times = std::move(d._dist_times);
   _last_checkpt = std::move(d._last_checkpt);
   _cur_checkpt.store(d._cur_checkpt.load());
+  _lap_length.store(d._lap_length);
   return *this;
 }
 
