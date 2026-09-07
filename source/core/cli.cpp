@@ -2,7 +2,7 @@
 #include "core.hpp"
 #include <string_view>
 
-static constexpr size_t SEP_WIDTH = 10;
+static constexpr size_t SEP_WIDTH = 5;
 
 namespace CLI {
 std::string const Parser::get_help() const {
@@ -41,18 +41,23 @@ std::string const Parser::get_help() const {
 
   std::vector<ArgRow> arg_rows{};
 
+  // Build rows of pairs of strings representing arg spec and description,
+  // respectively
   std::transform(std::cbegin(_args), std::cend(_args),
                  std::back_inserter(arg_rows), [](Arg const &arg) -> ArgRow {
                    return ArgRow{arg.checked_get_internal_name(),
                                  arg.checked_get_help_msg()};
                  });
 
+  // Find the longest arg name
   const size_t max_arg =
       std::get<0>(*std::max_element(std::cbegin(arg_rows), std::cend(arg_rows),
                                     [](ArgRow const &a, ArgRow const &b) {
                                       return std::get<0>(a) < std::get<0>(b);
                                     }))
           .length();
+
+  // Find the longest arg description
   const size_t max_arg_desc =
       std::get<1>(*std::max_element(std::cbegin(arg_rows), std::cend(arg_rows),
                                     [](ArgRow const &a, ArgRow const &b) {
@@ -60,6 +65,8 @@ std::string const Parser::get_help() const {
                                     }))
           .length();
 
+  // For each row in arg_rows, stream the arg name and description to the output
+  // stringstream
   std::transform(std::cbegin(arg_rows), std::cend(arg_rows),
                  std::ostream_iterator<std::string>(output, "\n"),
                  [max_arg, max_arg_desc](ArgRow const &row) -> std::string {
@@ -69,6 +76,7 @@ std::string const Parser::get_help() const {
                      << std::setw(max_arg_desc) << std::get<1>(row);
                    return o.str();
                  });
+
   output << std::endl;
 
   output << "Options: " << std::endl;
@@ -111,13 +119,15 @@ std::string const Parser::get_help() const {
   const size_t max_shortname =
       std::get<0>(*std::max_element(std::cbegin(opt_rows), std::cend(opt_rows),
                                     [](OptRow const &a, OptRow const &b) {
-                                      return std::get<0>(a) < std::get<0>(b);
+                                      return std::get<0>(a).size() <
+                                             std::get<0>(b).size();
                                     }))
           .length();
   const size_t max_longname =
       std::get<1>(*std::max_element(std::cbegin(opt_rows), std::cend(opt_rows),
                                     [](OptRow const &a, OptRow const &b) {
-                                      return std::get<1>(a) < std::get<1>(b);
+                                      return std::get<1>(a).size() <
+                                             std::get<1>(b).size();
                                     }))
           .length();
 
@@ -130,10 +140,15 @@ std::string const Parser::get_help() const {
         const std::string_view longname = std::get<1>(row);
         const std::string_view desc = std::get<2>(row);
 
-        o << std::left << "  " << (shortname.length() > 0 ? "-" : " ")
-          << std::setw(max_shortname) << shortname << " "
-          << (longname.length() > 0 ? "--" : "  ") << std::setw(max_longname)
-          << longname << std::setw(SEP_WIDTH) << " " << desc;
+        o << "  " << (shortname.length() > 0 ? "-" : " ") << shortname;
+        if (max_shortname - shortname.length() > 0)
+          o << std::string(max_shortname - shortname.length(), ' ');
+
+        o << " " << (longname.length() > 0 ? "--" : "  ") << longname;
+        if (max_longname - longname.length() > 0)
+          o << std::string(max_longname - longname.length(), ' ');
+
+        o << std::string(SEP_WIDTH, ' ') << desc;
 
         return o.str();
       });
