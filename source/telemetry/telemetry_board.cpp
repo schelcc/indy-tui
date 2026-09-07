@@ -85,12 +85,15 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
         _event_info.track_name = info.trackname();
 
       // Only do once
-      if (info.has_tracklength() && !_event_info.num_checkpts.has_value())
+      if (info.has_tracklength() && !_event_info.num_checkpts.has_value()) {
+        _event_info.lap_length = info.tracklength() * Units::METERS_PER_MILE;
+
         // We get tracklength as miles, so convert to meters and then calculate
         // the number of checkpoints
         _event_info.num_checkpts = static_cast<size_t>(
             std::ceil((info.tracklength() * Units::METERS_PER_MILE) /
                       DriverTelemetry::CHECKPOINT_DIST));
+      }
 
       if (info.has_tracktype())
         _event_info.track_type = info.tracktype();
@@ -126,10 +129,6 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
 
       if (hbeat.has_totallaps())
         _event_info.total_laps = hbeat.totallaps();
-
-      if (hbeat.has_tracklength())
-        _event_info.lap_length =
-            std::stod(hbeat.tracklength()) * Units::METERS_PER_MILE;
     }
   }
 
