@@ -55,6 +55,11 @@ public:
   // considered at the checkpoint
   static constexpr long CHECKPOINT_DIST_THRESH = 15;
 
+  // For some reason, the telemetry timestamp randomly increases by
+  // 2e6 or more and then comes back down, so for checkpoint
+  // calculations we'll need to skip these erroneous timestamps
+  static constexpr size_t MAX_TIMESTAMP_DIFF_ALLOWED = 1e6;
+
 public:
   static constexpr size_t MIN_IN_PIT_CNT = 25;
 

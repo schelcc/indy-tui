@@ -49,13 +49,37 @@ void DriverTelemetry::refresh() noexcept {
         std::unique_lock lock(_dist_mtx);
         assert(_dist_times.size() > static_cast<size_t>(checkpt.quot));
 
-        auto &c = _dist_times.at(checkpt.quot);
-        if (_telemetry.timeofday() > c.time) {
-          c.time = static_cast<size_t>(_telemetry.timeofday());
-          c.age = 0;
+        Checkpoint &prec_checkpt =
+            _dist_times.at((checkpt.quot - 1) % _dist_times.size());
+        Checkpoint &this_checkpt = _dist_times.at(checkpt.quot);
+
+        size_t new_timestamp = _telemetry.timeofday();
+
+        if (prec_checkpt.time.has_value()) {
+          size_t prec_timestamp = prec_checkpt.time.value();
+          // If the preceeding timestamp is significantly larger than this one,
+          // we clear it and populate this one
+          if (prec_timestamp > (new_timestamp + MAX_TIMESTAMP_DIFF_ALLOWED)) {
+            prec_checkpt.time = {};
+            prec_checkpt.age = 0;
+
+            this_checkpt.time = new_timestamp;
+            this_checkpt.age = 0;
+          } else if (new_timestamp >
+                     (prec_timestamp + MAX_TIMESTAMP_DIFF_ALLOWED)) {
+            // If the new timestamp is significantly larger than the preceeding
+            // one, clear this one
+            this_checkpt.time = {};
+            this_checkpt.age = 0;
+          } else {
+            // This and the preceeding timestamp are likely valid
+            this_checkpt.time = new_timestamp;
+            this_checkpt.age = 0;
+          }
         } else {
-          c.time = {};
-          c.age = 0;
+          // Preceeding checkpoint is empty, so populate this one and move on
+          this_checkpt.time = new_timestamp;
+          this_checkpt.age = 0;
         }
 
         std::unique_lock checkpt_lock(_last_checkpt_mtx);
@@ -123,9 +147,6 @@ DriverTelemetry::diff_to_car(DriverTelemetry const &d) const noexcept {
   double diff = (static_cast<int>(other_ts.time.value()) -
                  static_cast<int>(our_ts.time.value())) /
                 1000.0;
-
-  if (std::abs(diff) > 250)
-    return {};
 
   return diff;
 }
