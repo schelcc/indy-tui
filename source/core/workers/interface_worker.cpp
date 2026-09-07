@@ -46,6 +46,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   assert(board.add_column(board_plane, Columns::Speed{}));
   assert(board.add_column(board_plane, Columns::Throttle{}));
   assert(board.add_column(board_plane, Columns::Brake{}));
+  assert(board.add_column(board_plane, Columns::LastTimingLine{}));
   assert(board.add_column(board_plane, Columns::Gap{}));
   assert(board.add_column(board_plane, Columns::Interval{}));
   assert(board.add_column(board_plane, Columns::LapsSincePit{}));

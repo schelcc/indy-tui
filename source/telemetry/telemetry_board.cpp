@@ -25,7 +25,9 @@
 #include "telemetry/telemetry_frame.hpp"
 
 #include "ErpMessage.pb.h"
-#include "time.hpp"
+#include "core/time.hpp"
+#include "core/units.hpp"
+
 #include "ui/ui.hpp"
 
 using proto::telemetry::ErpMessage;
@@ -82,6 +84,17 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
       if (info.has_trackname())
         _event_info.track_name = info.trackname();
 
+      // Only do once
+      if (info.has_tracklength() && !_event_info.num_checkpts.has_value()) {
+        _event_info.lap_length = info.tracklength() * Units::METERS_PER_MILE;
+
+        // We get tracklength as miles, so convert to meters and then calculate
+        // the number of checkpoints
+        _event_info.num_checkpts = static_cast<size_t>(
+            std::ceil((info.tracklength() * Units::METERS_PER_MILE) /
+                      DriverTelemetry::CHECKPOINT_DIST));
+      }
+
       if (info.has_tracktype())
         _event_info.track_type = info.tracktype();
     }
@@ -119,6 +132,13 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
     }
   }
 
+  // Don't move on if we don't yet have track length
+  if (!_event_info.num_checkpts.has_value() ||
+      !_event_info.lap_length.has_value())
+    return {};
+
+  assert(_event_info.num_checkpts.value() > 0);
+
   // Check whether the driver is in the map, adding it if not. If the carnumber
   // couldn't be found, return false. If successful, return true. Can add in a
   // condition and guard initialized with short circuiting
@@ -128,8 +148,11 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
     std::string const &car_num = iter.carnumber();
 
     if (!_driver_map.contains(car_num)) {
+
       _driver_map[car_num] = _drivers.size();
       _drivers.emplace_back();
+      _drivers.back().set_checkpoints(_event_info.num_checkpts.value());
+      _drivers.back().set_lap_length(_event_info.lap_length.value());
     }
 
     return true;
@@ -153,22 +176,6 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
                         _drivers.at(_driver_map.at(iter.carnumber()));
 
                     driver.take_new_telemetry(std::move(iter));
-
-                    // Each-update tasks/checks
-                    if (driver._telemetry.has_isinpit()) {
-                      driver.in_pit_count +=
-                          static_cast<size_t>(driver._telemetry.isinpit());
-
-                      if (driver._telemetry.isinpit()) {
-                        driver.in_pit_count++;
-
-                        driver.in_pit = driver.in_pit_count >=
-                                        DriverTelemetry::MIN_IN_PIT_CNT;
-                      } else {
-                        driver.in_pit_count = 0;
-                        driver.in_pit = false;
-                      }
-                    }
                   });
   }
 
@@ -192,6 +199,11 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
                       .take_new_lap(std::move(iter));
                 });
 
+  // Driver objects complete each-lap updates here to keep as much out of the
+  // above loops as possible
+  std::for_each(std::execution::par_unseq, std::begin(_drivers),
+                std::end(_drivers), [](auto &d) { d.refresh(); });
+
   return {};
 }
 
@@ -206,6 +218,25 @@ void TelemetryBoard::draw_columns() {
 
   // We've changed the order of the drivers vec, so reassociate the LUT
   reassociate_drivers();
+
+  // Calculate each driver's gap to leader
+  {
+    std::shared_lock lock(_driver_vec_mtx);
+    if (_drivers.size() >= 2) {
+      auto &leader = _drivers.front();
+      size_t prev_idx = 0;
+      std::for_each(std::begin(_drivers) + 1, std::end(_drivers),
+                    [&leader, &prev_idx, this](DriverTelemetry &d) {
+                      d.gap_to_leader =
+                          d.diff_to_car(leader).value_or(d.gap_to_leader);
+                      // d.calculate_gap(leader);
+                      d.interval_to_next =
+                          d.diff_to_car(_drivers.at(prev_idx++))
+                              .value_or(d.interval_to_next);
+                      // d.calculate_interval(_drivers.at(prev_idx++));
+                    });
+    }
+  }
 
   std::shared_lock lock(_column_planes_mtx);
   auto v = std::views::zip(_column_planes, _columns);

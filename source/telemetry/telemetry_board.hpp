@@ -86,6 +86,7 @@ private:
     // Found in TrackInformation:
     std::optional<std::string> track_name = {};
     std::optional<std::string> track_type = {};
+    std::optional<size_t> num_checkpts = {};
 
     // Found in HeartBeat:
     std::optional<std::string> event_name = {};
@@ -97,6 +98,7 @@ private:
     std::optional<std::string> track_time = {};
     std::optional<int> completed_laps = {};
     std::optional<int> total_laps = {};
+    std::optional<double> lap_length = {};
 
     /** @brief Update fields given a parsed protobuf message. For fields only
      * found in per-driver entries, uses the first available driver.
