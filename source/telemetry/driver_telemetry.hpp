@@ -82,7 +82,7 @@ public:
 
   /** @brief Check whether the current telemetry is valid (not stale). */
   bool is_telem_valid() const noexcept {
-    return _frames_since_telem < STALE_TELEM_THRESH;
+    return _frames_since_telem <= STALE_TELEM_THRESH;
   }
 
   /** @brief Retrieve the driver's car number. */
