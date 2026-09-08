@@ -3,6 +3,7 @@
 
 #include "ErpMessage.pb.h"
 
+#include "catch2/matchers/catch_matchers.hpp"
 #include "draw.hpp"
 #include "telemetry/driver_telemetry.hpp"
 #include "tools/matchers.hpp"
@@ -28,8 +29,6 @@ struct TelemGenerator {
   int time_step_ms = 1;
   float dist_step_m = 1.0;
 
-  double speed = 125.5;
-
   bool in_pit = false;
 
   ErpTelemetry make_cur() const {
@@ -47,15 +46,70 @@ struct TelemGenerator {
 
   ErpTelemetry make_stepping_dist() {
     dist += dist_step_m;
+    if (dist > TESTLAP_LENGTH_M)
+      dist -= TESTLAP_LENGTH_M;
     return make_cur();
   }
 
   ErpTelemetry make_stepping_all() {
     time_ms += time_step_ms;
     dist += dist_step_m;
+    if (dist > TESTLAP_LENGTH_M)
+      dist -= TESTLAP_LENGTH_M;
     return make_cur();
   }
 };
+
+using Catch::Matchers::WithinRel;
+
+TEST_CASE("Telemetry generator works", "[test-infra]") {
+  TelemGenerator gen{};
+
+  gen.time_ms = 0;
+  gen.time_step_ms = 100;
+  gen.dist = 0;
+  gen.dist_step_m = 50;
+
+  CHECK_FALSE(gen.in_pit);
+  CHECK(gen.time_ms == 0);
+  CHECK_THAT(gen.dist, WithinRel(0.0));
+
+  auto m = gen.make_cur();
+  CHECK_FALSE(m.isinpit());
+  CHECK(m.timeofday() == 0);
+  CHECK_THAT(m.lapdistance(), WithinRel(0.0));
+
+  m = gen.make_stepping_all();
+  CHECK_FALSE(gen.in_pit);
+  CHECK(gen.time_ms == 100);
+  CHECK_THAT(gen.dist, WithinRel(50.0));
+
+  CHECK_FALSE(m.isinpit());
+  CHECK(m.timeofday() == 100);
+  CHECK_THAT(m.lapdistance(), WithinRel(50.0));
+
+  gen.dist = TESTLAP_LENGTH_M - 2;
+  gen.dist_step_m = 5.5;
+
+  m = gen.make_cur();
+  CHECK_FALSE(gen.in_pit);
+  CHECK(gen.time_ms == 100);
+  CHECK_THAT(gen.dist, WithinRel(TESTLAP_LENGTH_M - 2.0));
+
+  CHECK_FALSE(m.isinpit());
+  CHECK(m.timeofday() == 100);
+  CHECK_THAT(m.lapdistance(), WithinRel(TESTLAP_LENGTH_M - 2.0));
+
+  // 2 behind lap end, so stepping forward 5.5 meters should put us at 3.5
+  m = gen.make_stepping_all();
+  CHECK_FALSE(gen.in_pit);
+  CHECK(gen.time_ms == 200);
+  CHECK_THAT(gen.dist, WithinRel(3.5));
+
+  CHECK_FALSE(m.isinpit());
+  CHECK(m.timeofday() == 200);
+  CHECK_THAT(m.lapdistance(), WithinRel(3.5));
+}
 
 TEST_CASE("Basic driver_telemetry functionality", "[telemetry]") {
   DriverTelemetry d{};
