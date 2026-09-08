@@ -195,6 +195,11 @@ DriverTelemetry::get_checkpoint(size_t const checkpt) const {
          (_results.has_lastname() ? _results.lastname() : "Name");
 }
 
+[[nodiscard]] std::optional<size_t> DriverTelemetry::get_last_checkpt() const {
+  std::shared_lock lock(_last_checkpt_mtx);
+  return _last_checkpt;
+}
+
 [[nodiscard]] double DriverTelemetry::get_speed() const {
   return (_telemetry.has_vehiclespeed() ? _telemetry.vehiclespeed() : 0.0);
 }

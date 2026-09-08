@@ -40,4 +40,15 @@ template <typename T> bool eq(T const lhs, T const rhs) {
     return lhs == rhs;
 };
 
+// https://stackoverflow.com/questions/31952237/looking-for-a-constexpr-ceil-function
+template <typename T>
+  requires requires(T t) {
+    static_cast<int>(t);
+    t < 0.5;
+  }
+constexpr int ceil(T const t) {
+  const int i = static_cast<int>(t);
+  return (t > i) ? i + 1 : i;
+}
+
 }; // namespace Tools::Numeric

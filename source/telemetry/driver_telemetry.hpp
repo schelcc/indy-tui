@@ -43,8 +43,8 @@ public:
   mutable std::shared_mutex _dist_mtx;
 
   // Number of frames since we last got a telemetry update. Used to "invalidate"
-  // stale telemetry
-  size_t _frames_since_telem = 0;
+  // stale telemetry. Start past the threshold, as we are by default invalid.
+  size_t _frames_since_telem = STALE_TELEM_THRESH + 1;
 
   std::atomic<double> _lap_length = std::numeric_limits<double>::max();
 
@@ -82,7 +82,7 @@ public:
 
   /** @brief Check whether the current telemetry is valid (not stale). */
   bool is_telem_valid() const noexcept {
-    return _frames_since_telem < STALE_TELEM_THRESH;
+    return _frames_since_telem <= STALE_TELEM_THRESH;
   }
 
   /** @brief Retrieve the driver's car number. */

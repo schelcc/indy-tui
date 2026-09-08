@@ -160,6 +160,9 @@ public:
       case ILLEGAL_REFRESH:
         return "ILLEGAL_REFRESH";
         break;
+      default:
+        return "OTHER_ERR";
+        break;
       }
     }
 

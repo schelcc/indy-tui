@@ -60,4 +60,29 @@ struct ExpIsErr : Catch::Matchers::MatcherGenericBase {
   std::string describe() const override { return "expected has error"; }
 };
 
+struct OptEmpty : Catch::Matchers::MatcherGenericBase {
+  template <typename T> bool match(std::optional<T> const &other) const {
+    return !other.has_value();
+  }
+
+  std::string describe() const override { return "option is empty"; }
+};
+
+template <typename T>
+  requires requires(T t) { std::format("{}", t); }
+struct OptHas : Catch::Matchers::MatcherGenericBase {
+  OptHas(T t) : _t(t) {};
+
+  bool match(std::optional<T> const &other) const {
+    return other.value() == _t;
+  }
+
+  std::string describe() const override {
+    return std::format("option has value \"{}\"", _t);
+  }
+
+private:
+  T _t;
+};
+
 }; // namespace Tools::Matchers
