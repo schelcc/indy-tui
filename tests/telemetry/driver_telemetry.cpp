@@ -30,10 +30,13 @@ struct TelemGenerator {
 
   double speed = 125.5;
 
+  bool in_pit = false;
+
   ErpTelemetry make_cur() const {
     ErpTelemetry m{};
     m.set_timeofday(time_ms);
     m.set_lapdistance(dist);
+    m.set_isinpit(in_pit);
     return m;
   }
 
@@ -160,5 +163,94 @@ TEST_CASE("Corrections for faulty received telemetry", "[telemetry]") {
     d.take_new_telemetry(gen.make_stepping_time());
     REQUIRE_THAT(d._telemetry.lapdistance(),
                  Catch::Matchers::WithinRel(gen.dist));
+  }
+
+  SECTION("reject fluctuating pit status") {
+    gen.in_pit = false;
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+
+    REQUIRE_FALSE(d._telemetry.isinpit());
+    REQUIRE_FALSE(d.in_pit);
+
+    gen.in_pit = true;
+
+    // Telem should show is in pit, but driver should show as not
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+    REQUIRE(d._telemetry.isinpit());
+    REQUIRE_FALSE(d.in_pit);
+  }
+
+  SECTION("accept stable pit status only after configured count") {
+    gen.in_pit = false;
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+
+    REQUIRE_FALSE(d._telemetry.isinpit());
+    REQUIRE_FALSE(d.in_pit);
+
+    gen.in_pit = true;
+
+    // Driver should show as not in pit until at or after min count
+    for (size_t i = 0; i < DriverTelemetry::MIN_IN_PIT_CNT - 1; i++) {
+      d.take_new_telemetry(gen.make_stepping_time());
+      d.refresh();
+
+      REQUIRE(d._telemetry.isinpit());
+      REQUIRE_FALSE(d.in_pit);
+    }
+
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+
+    // Should now be at min count
+    REQUIRE(d._telemetry.isinpit());
+    REQUIRE(d.in_pit);
+
+    // Should remain in pit beyond min count
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+
+    REQUIRE(d._telemetry.isinpit());
+    REQUIRE(d.in_pit);
+  }
+
+  SECTION("single non-in-pit frame resets pit status") {
+    // Build up to and past in-pit, then reset and demonstrate it taking until
+    // reaching min count again to reflect as in pit
+
+    gen.in_pit = false;
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+
+    REQUIRE_FALSE(d._telemetry.isinpit());
+    REQUIRE_FALSE(d.in_pit);
+
+    gen.in_pit = true;
+
+    // Driver should show as not in pit until at or after min count
+    for (size_t i = 0; i < DriverTelemetry::MIN_IN_PIT_CNT + 2; i++) {
+      d.take_new_telemetry(gen.make_stepping_time());
+      d.refresh();
+    }
+
+    REQUIRE(d.in_pit);
+
+    gen.in_pit = false;
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+    REQUIRE_FALSE(d.in_pit);
+
+    gen.in_pit = true;
+    for (size_t i = 0; i < DriverTelemetry::MIN_IN_PIT_CNT - 1; i++) {
+      d.take_new_telemetry(gen.make_stepping_time());
+      d.refresh();
+      REQUIRE_FALSE(d.in_pit);
+    }
+
+    d.take_new_telemetry(gen.make_stepping_time());
+    d.refresh();
+    REQUIRE(d.in_pit);
   }
 }
