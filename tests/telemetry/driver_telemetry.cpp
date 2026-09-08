@@ -255,7 +255,7 @@ TEST_CASE("Basic driver_telemetry functionality", "[telemetry]") {
       auto c = d.get_checkpoint(i);
       REQUIRE(c.has_value());
 
-      auto checkpt = c.value();
+      auto const &checkpt = c.value();
       CHECK_THAT(checkpt.time, OptEmpty());
       CHECK(checkpt.age == 0);
     }
@@ -265,9 +265,14 @@ TEST_CASE("Basic driver_telemetry functionality", "[telemetry]") {
       // Halfway between i and i + 1
       d.take_new_telemetry(gen.make_stepping_all());
       d.refresh();
-      // Just past i + 1
-      d.take_new_telemetry(gen.make_stepping_all());
-      d.refresh();
+
+      // Don't do on the final iteration so that the last time in the generator
+      // is the last checkpoint's time
+      if (i < TESTLAP_CHECKPTS - 1) {
+        // Just past i + 1
+        d.take_new_telemetry(gen.make_stepping_all());
+        d.refresh();
+      }
     }
 
     // Doesn't check initial checkpoint, as there needs to be special
@@ -276,7 +281,7 @@ TEST_CASE("Basic driver_telemetry functionality", "[telemetry]") {
       auto c = d.get_checkpoint(i % TESTLAP_CHECKPTS);
       REQUIRE(c.has_value());
 
-      auto checkpt = c.value();
+      auto const &checkpt = c.value();
 
       INFO("Checkpoint #" << i % TESTLAP_CHECKPTS << " completed at time "
                           << checkpt.time.value_or(1) << " w/ age "
@@ -285,10 +290,21 @@ TEST_CASE("Basic driver_telemetry functionality", "[telemetry]") {
       CHECK_THAT(checkpt.time, !OptEmpty() && OptHas(2 * gen.time_step_ms * i));
       CHECK(checkpt.age == 0);
     }
+
+    // Due to the chance for a short final checkpoint we just check that the
+    // final time value in the generator match checkpoint 0, the last checkpoint
+    // to be crossed
+    auto c = d.get_checkpoint(0);
+
+    REQUIRE(c.has_value());
+    auto const &checkpt = c.value();
+
+    CHECK_THAT(checkpt.time, !OptEmpty() && OptHas(gen.time_ms));
+    CHECK(checkpt.age == 0);
   }
 }
 
-TEST_CASE("Corrections for faulty received telemetry", "[telemetry]") {
+TEST_CASE("Corrections for faulty received telemetry", "[telemetry][unit]") {
   DriverTelemetry d{};
   d.set_lap_length(static_cast<double>(TESTLAP_LENGTH_M));
   d.set_checkpoints(TESTLAP_CHECKPTS);
