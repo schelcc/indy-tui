@@ -153,6 +153,139 @@ TEST_CASE("Basic driver_telemetry functionality", "[telemetry]") {
     INFO("Stale count is " << d._frames_since_telem);
     CHECK_FALSE(d.is_telem_valid());
   }
+
+  SECTION("proper checkpoint progression") {
+    // Start at something not equal to 0 mod checkpoint_dist so that if we
+    // increment by checkpoint dist we don't wind up on one directly
+    gen.dist = 2;
+
+    // Step distance by half of checkpoint distance to verify non-progression
+    // when appropriate
+    gen.dist_step_m = DriverTelemetry::CHECKPOINT_DIST / 2.0;
+
+    // Start with no prior checkpoint
+    REQUIRE_THAT(d.get_last_checkpt(), OptEmpty());
+
+    // Advance, but not beyond checkpoint 1, so we should not reflect as
+    // last_checkpoint being 0
+    d.take_new_telemetry(gen.make_stepping_all());
+    d.refresh();
+    REQUIRE_THAT(d.get_last_checkpt(), OptEmpty());
+
+    INFO("Total checkpoints are " << TESTLAP_CHECKPTS);
+    INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                  << d.get_last_checkpt().value_or(999));
+
+    // Advance, now beyond checkpoint 1, so last checkpoint should be 0
+    d.take_new_telemetry(gen.make_stepping_all());
+    d.refresh();
+    REQUIRE_THAT(d.get_last_checkpt(), !OptEmpty() && OptHas(0));
+
+    INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                  << d.get_last_checkpt().value_or(999));
+
+    // Start loop at the start of checkpoint 1
+    for (size_t i = 1; i < TESTLAP_CHECKPTS - 1; i++) {
+      INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                    << d.get_last_checkpt().value_or(999));
+      // Advance, putting us halfway to checkpoint i + 1
+      d.take_new_telemetry(gen.make_stepping_all());
+      d.refresh();
+
+      // Between checkpoint i and i + 1, so last checkpoint would be i - 1
+      REQUIRE_THAT(d.get_last_checkpt(), !OptEmpty() && OptHas(i - 1));
+
+      INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                    << d.get_last_checkpt().value_or(999));
+
+      // Advance, putting us just after checkpoint i + 1
+      d.take_new_telemetry(gen.make_stepping_all());
+      d.refresh();
+
+      // Now last checkpoint should be i
+      REQUIRE_THAT(d.get_last_checkpt(), !OptEmpty() && OptHas(i));
+    }
+
+    // Should leave us at the final checkpoint, TESTLAP_CHECKPTS - 1
+
+    INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                  << d.get_last_checkpt().value_or(999));
+
+    // Advance, putting us just beyond checkpoint 0, making our last checkpoint
+    // the final one
+    d.take_new_telemetry(gen.make_stepping_all());
+    d.refresh();
+
+    REQUIRE_THAT(d.get_last_checkpt(),
+                 !OptEmpty() && OptHas(TESTLAP_CHECKPTS - 1));
+
+    INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                  << d.get_last_checkpt().value_or(999));
+
+    // Advance, keeping us before checkpoint 1
+    d.take_new_telemetry(gen.make_stepping_all());
+    d.refresh();
+
+    REQUIRE_THAT(d.get_last_checkpt(),
+                 !OptEmpty() && OptHas(TESTLAP_CHECKPTS - 1));
+
+    INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                  << d.get_last_checkpt().value_or(999));
+
+    // Advance, putting us past checkpoint 1, wrapping our prev checkpoint back
+    // to 0
+    d.take_new_telemetry(gen.make_stepping_all());
+    d.refresh();
+
+    REQUIRE_THAT(d.get_last_checkpt(), !OptEmpty() && OptHas(0));
+
+    INFO("Current checkpoint is " << d._cur_checkpt << ", last checkpoint is "
+                                  << d.get_last_checkpt().value_or(999));
+  }
+
+  SECTION("proper checkpoint population") {
+    gen.dist_step_m = DriverTelemetry::CHECKPOINT_DIST / 2.0;
+    gen.time_step_ms = 200;
+
+    d.take_new_telemetry(gen.make_cur());
+    d.refresh();
+
+    // Ensure checkpoints are all empty
+    for (size_t i = 0; i < TESTLAP_CHECKPTS; i++) {
+      auto c = d.get_checkpoint(i);
+      REQUIRE(c.has_value());
+
+      auto checkpt = c.value();
+      CHECK_THAT(checkpt.time, OptEmpty());
+      CHECK(checkpt.age == 0);
+    }
+
+    // Advance over each checkpoint
+    for (size_t i = 0; i < TESTLAP_CHECKPTS; i++) {
+      // Halfway between i and i + 1
+      d.take_new_telemetry(gen.make_stepping_all());
+      d.refresh();
+      // Just past i + 1
+      d.take_new_telemetry(gen.make_stepping_all());
+      d.refresh();
+    }
+
+    // Doesn't check initial checkpoint, as there needs to be special
+    // consideration for a short final checkpoint
+    for (size_t i = 1; i < TESTLAP_CHECKPTS; i++) {
+      auto c = d.get_checkpoint(i % TESTLAP_CHECKPTS);
+      REQUIRE(c.has_value());
+
+      auto checkpt = c.value();
+
+      INFO("Checkpoint #" << i % TESTLAP_CHECKPTS << " completed at time "
+                          << checkpt.time.value_or(1) << " w/ age "
+                          << checkpt.age);
+
+      CHECK_THAT(checkpt.time, !OptEmpty() && OptHas(2 * gen.time_step_ms * i));
+      CHECK(checkpt.age == 0);
+    }
+  }
 }
 
 TEST_CASE("Corrections for faulty received telemetry", "[telemetry]") {
