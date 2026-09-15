@@ -5,6 +5,7 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <sstream>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -15,6 +16,9 @@
 
 #include "core/core.hpp"
 #include "ui/ui.hpp"
+
+template <typename T, typename S>
+concept IsNot = !std::is_same_v<T, S>;
 
 namespace UI {
 
@@ -135,10 +139,29 @@ struct String {
                   std::in_place_type_t<std::wstring>(), str.data()},
               color, style}}) {};
 
-  // template <typename S>
-  //   requires std::is_same_v<std::remove_cvref_t<S>, Core::MultiStr>
-  // String(S &&str)
-  //     : str(std::make_tuple(std::forward<S>(str), Color{}, Style{})) {}
+  // For anything string convertible
+  template <typename S>
+    requires std::is_convertible_v<S, std::string>
+  String(S &&s, Color const color = Color::NONE,
+         Style const style = Style::NORMAL)
+      : str({{std::string(std::move(s)), color, style}}){};
+
+  // For anything not string convertible but wstring convertible
+  template <typename S>
+    requires(!std::is_convertible_v<S, std::string> &&
+             std::is_convertible_v<S, std::wstring>)
+  String(S &&s, Color const color = Color::NONE,
+         Style const style = Style::NORMAL)
+      : str({{std::wstring(std::move(s)), color, style}}){};
+
+  // Stream operator fallback for everything else
+  template <typename S>
+    requires((!std::is_convertible_v<S, std::string> &&
+              !std::is_convertible_v<S, std::wstring>) &&
+             requires(S s) { std::stringstream() << s; })
+  String(S &&s, Color const color = Color::NONE,
+         Style const style = Style::NORMAL)
+      : str({{(std::stringstream() << std::move(s)).str(), color, style}}){};
 
   String() = default;
 
