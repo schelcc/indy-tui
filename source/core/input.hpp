@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <notcurses/notcurses.h>
+#include <optional>
 #include <type_traits>
 
 namespace Input {
@@ -18,6 +19,18 @@ enum class Modifier : size_t {
 struct KeyWithMod {
   wchar_t key{};
   Modifier mod{};
+
+  KeyWithMod(wchar_t k, Modifier m) : key(k), mod(m) {};
+
+  KeyWithMod(ncinput const &ni) {
+    key = *ni.utf8;
+
+    const bool has_ctrl = ncinput_ctrl_p(&ni);
+    const bool has_shift = ncinput_shift_p(&ni);
+    // Can figure out Modifier using 2 bits
+    mod = Modifier((static_cast<unsigned short>(has_ctrl) << 1) +
+                   (static_cast<unsigned short>(has_shift)));
+  }
 
   inline bool operator==(const KeyWithMod &other) const {
     return (this->key == other.key) && (this->mod == other.mod);
@@ -77,19 +90,21 @@ struct InputHandler {
     return *this;
   }
 
-  void handle_input(const ncinput &ni) {
-    const bool has_ctrl = ncinput_ctrl_p(&ni);
-    const bool has_shift = ncinput_shift_p(&ni);
-    // Can figure out Modifier using 2 bits
-    const Modifier mod = Modifier((static_cast<unsigned short>(has_ctrl) << 1) +
-                                  (static_cast<unsigned short>(has_shift)));
-
-    auto callback = input_table.find(KeyWithMod(*ni.utf8, mod));
+  void handle_input(KeyWithMod const &k) {
+    auto callback = input_table.find(k);
 
     if (callback == input_table.end())
       return;
 
     std::invoke(callback->second.callback);
+  }
+
+  bool has_registered(ncinput const &ni) const {
+    return input_table.contains(KeyWithMod(ni));
+  }
+
+  bool has_registered(KeyWithMod const &k) const {
+    return input_table.contains(k);
   }
 };
 
