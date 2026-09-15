@@ -172,4 +172,13 @@ void TableView::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   }
 }
 
+void TableView::clear() noexcept {
+  auto d = get_dim();
+  std::unique_lock lock(_mtx);
+  _table = std::vector<std::vector<std::optional<UI::String>>>(
+      d.rows, std::vector<std::optional<UI::String>>(
+                  d.cols, std::optional<UI::String>({})));
+  _col_widths = std::vector<size_t>(d.cols, 0);
+}
+
 }; // namespace UI
