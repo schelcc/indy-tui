@@ -23,6 +23,4 @@ template <typename... Ts> struct Overload : Ts... {
   using Ts::operator()...;
 };
 
-using MultiStr = std::variant<std::string, std::wstring>;
-
 }; // namespace Core

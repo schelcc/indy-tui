@@ -96,6 +96,29 @@ enum class Target {
   BG,
 };
 
+static inline uint64_t mask_pal_channels(std::unique_ptr<ncpp::Plane> &p,
+                                         Target const target,
+                                         PaletteColors const color) {
+  uint64_t chan = p->get_channels();
+
+  if (color == PaletteColors::NONE)
+    return chan;
+
+  ncpp::Palette pal{};
+
+  unsigned int r;
+  unsigned int g;
+  unsigned int b;
+
+  pal.get(static_cast<int>(color), r, g, b);
+
+  if (target == Target::FG)
+    ncchannels_set_fg_rgb8(&chan, r, g, b);
+  else
+    ncchannels_set_bg_rgb8(&chan, r, g, b);
+
+  return chan;
+}
 static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
                                          Target const target,
                                          PaletteColors const color) {

@@ -10,6 +10,7 @@
 
 #include "telemetry/driver_telemetry.hpp"
 #include "tools/draw.hpp"
+#include "ui/string.hpp"
 #include "ui/ui.hpp"
 
 namespace Columns {

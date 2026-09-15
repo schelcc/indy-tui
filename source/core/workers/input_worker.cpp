@@ -94,4 +94,35 @@ void KeyWorker::operator()(std::stop_token stop_tok) {
   }
 }
 
+void TestKeyWorker::operator()(std::stop_token stop_tok) {
+  Tools::Log::Debug("Started test-key worker", "WORKER-INPUT");
+
+  nc.linesigs_disable();
+
+  using Input::KeyWithMod;
+  using Input::Modifier;
+
+  Input::InputHandler handler{};
+
+  handler
+      .register_callback(KeyWithMod('q', Modifier::NONE),
+                         "Exit the application",
+                         []() {
+                           Tools::Log::Debug("Quit requested", "WORKER-INPUT");
+                           App::AppContext::Shutdown("Quit requested by user");
+                         })
+      .duplicate_callback(KeyWithMod('q', Modifier::NONE),
+                          KeyWithMod('C', Modifier::CTRL));
+
+  while (!stop_tok.stop_requested()) {
+    ncinput in{};
+
+    if (nc.get(&INPUT_TIMEOUT, &in) == 0)
+      continue;
+
+    if (in.evtype == ncpp::EvType::Release)
+      handler.handle_input(in);
+  }
+}
+
 }; // namespace Workers
