@@ -31,9 +31,14 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
 
   std::expected<void, UI::ViewErr> res;
 
-  res = table.set_at(1, 0, UI::String("Cycles"));
-  res = table.set_at(2, 0, UI::String("Cycles quot. 5"));
-  res = table.set_at(3, 0, UI::String("Cycles quot. 10"));
+  // Set column names
+  res = table.update_row(
+      0, {UI::String("Qty."), UI::String("Value"), UI::String("Empty")});
+
+  // Set row names
+  res = table.update_col(0, 1,
+                         {UI::String("Cycles"), UI::String("Cycles quot. 5"),
+                          UI::String("Cycles quot. 10")});
 
   size_t cnt = 0;
 
@@ -41,9 +46,11 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
     auto render_start = Time::Clock::now();
     auto block_until = render_start + MAX_REDRAW_HZ;
 
-    res = table.set_at(0, 1, UI::String(std::to_string(cnt)));
-    res = table.set_at(1, 1, UI::String(std::to_string(cnt / 5)));
-    res = table.set_at(2, 1, UI::String(std::to_string(cnt / 10)));
+    // Update column values
+    res = table.update_col(1, 1,
+                           {UI::String(std::to_string(cnt)),
+                            UI::String(std::to_string(cnt / 5)),
+                            UI::String(std::to_string(cnt / 10))});
 
     table.apply(std_plane);
 

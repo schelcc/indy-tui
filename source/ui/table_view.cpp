@@ -98,6 +98,52 @@ std::expected<void, ViewErr> TableView::update_row(
   return {};
 }
 
+std::expected<void, ViewErr> TableView::update_col(
+    size_t const col,
+    std::vector<std::optional<UI::String>> &&new_col) noexcept {
+  auto const d = get_dim();
+
+  if ((col >= d.cols) || (new_col.size() > d.cols))
+    return ViewErr(ViewErr::OUT_OF_RANGE);
+
+  std::unique_lock lock(_mtx);
+
+  auto &cur_width = _col_widths.at(col);
+
+  size_t row_idx = 0;
+  for (auto &&s : new_col) {
+    cur_width = std::max(cur_width, s.transform([](UI::String const &s) {
+                                       return s.size();
+                                     }).value_or(2));
+    _table.at(row_idx++).at(col) = std::move(s);
+  }
+
+  return {};
+}
+
+std::expected<void, ViewErr> TableView::update_col(
+    size_t const col, size_t const row_offset,
+    std::vector<std::optional<UI::String>> &&new_col) noexcept {
+  auto const d = get_dim();
+
+  if ((col >= d.cols) || (new_col.size() > d.cols))
+    return ViewErr(ViewErr::OUT_OF_RANGE);
+
+  std::unique_lock lock(_mtx);
+
+  auto &cur_width = _col_widths.at(col);
+
+  size_t row_idx = row_offset;
+  for (auto &&s : new_col) {
+    cur_width = std::max(cur_width, s.transform([](UI::String const &s) {
+                                       return s.size();
+                                     }).value_or(2));
+    _table.at(row_idx++).at(col) = std::move(s);
+  }
+
+  return {};
+}
+
 std::expected<void, ViewErr> TableView::clear_at(size_t const row,
                                                  size_t const col) noexcept {
   auto const d = get_dim();
@@ -113,30 +159,6 @@ std::expected<void, ViewErr> TableView::clear_at(size_t const row,
 
 void TableView::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   std::shared_lock lock(_mtx);
-
-  /*
-  A stupidly <algorithm> way to do it:
-
-  std::vector<size_t> accumulated_offsets{};
-  std::transform(std::cbegin(_col_widths), std::cend(_col_widths),
-                 std::back_inserter(accumulated_offsets), [](size_t const w) {
-                   static size_t sum = 0;
-                   return (sum += w) - w;
-                 });
-
-  size_t row_idx = 0;
-  std::ranges::for_each(
-      _table, [p, accumulated_offsets,
-               &row_idx](std::vector<std::optional<UI::String>> const &row) {
-        std::ranges::for_each(
-            std::ranges::zip_view(row, accumulated_offsets),
-            [p](auto const &c) {
-              auto [col_str, offset] = c;
-              col_str.value_or(UI::String("--")).apply_to_plane(p, 0, offset);
-            });
-        row_idx++;
-      });
-  */
 
   size_t row_idx = 0;
   for (auto const &row : _table) {

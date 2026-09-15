@@ -45,8 +45,12 @@ struct TextView {
 
 struct TableView {
 private:
-  // Rows of columns
   mutable std::shared_mutex _mtx;
+
+  // IMPROVEMENT : Switch to columns of rows and save on computation of column
+  // widths
+
+  // Rows of columns
   std::vector<std::vector<std::optional<UI::String>>> _table{};
   std::vector<size_t> _col_widths{};
 
@@ -66,6 +70,8 @@ public:
 
   void set_dim(Dim const &) noexcept;
 
+  void apply(std::shared_ptr<ncpp::Plane>) const noexcept;
+
   std::expected<void, ViewErr> set_at(size_t const, size_t const,
                                       UI::String &&) noexcept;
 
@@ -76,9 +82,14 @@ public:
   update_row(size_t const, size_t const,
              std::vector<std::optional<UI::String>> &&) noexcept;
 
-  std::expected<void, ViewErr> clear_at(size_t const, size_t const) noexcept;
+  std::expected<void, ViewErr>
+  update_col(size_t const, std::vector<std::optional<UI::String>> &&) noexcept;
 
-  void apply(std::shared_ptr<ncpp::Plane>) const noexcept;
+  std::expected<void, ViewErr>
+  update_col(size_t const, size_t const,
+             std::vector<std::optional<UI::String>> &&) noexcept;
+
+  std::expected<void, ViewErr> clear_at(size_t const, size_t const) noexcept;
 };
 
 }; // namespace UI
