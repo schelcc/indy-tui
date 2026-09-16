@@ -184,13 +184,13 @@ struct String {
   }
 };
 
-template <typename S1, typename S2>
-  requires requires(S1 s1, S2 s2) {
-    String(s1);
-    String(s2);
-  }
-String operator+(S1 &&s1, S2 &&s2) {
-  return String(std::forward<S1>(s1)).append(std::forward<S2>(s2));
+template <typename S, typename S1>
+  requires(std::is_same_v<S1, String> || std::is_same_v<S, String>)
+String operator+(S &&s, S1 &&s1) {
+  if constexpr (std::is_same_v<S, String>)
+    return String(std::move(s)).append(std::move(s1));
+  else
+    return String(std::move(s1)).append(std::move(s));
 }
 
 using MultiStr = std::variant<std::string, std::wstring, UI::String>;
