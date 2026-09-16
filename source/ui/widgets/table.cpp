@@ -1,14 +1,16 @@
-#include "string.hpp"
-#include "ui/widget.hpp"
 #include <algorithm>
+#include <cassert>
 #include <iterator>
 #include <mutex>
+
 #include <ncpp/Plane.hh>
-#include <ranges>
+
+#include "ui/string.hpp"
+#include "ui/widget.hpp"
 
 namespace UI {
 
-TableView::Dim TableView::get_dim() const noexcept {
+Table::Dim Table::get_dim() const noexcept {
   std::shared_lock lock(_mtx);
   const size_t col_size = (_table.size() > 0) ? _table.at(0).size() : 0;
 
@@ -19,7 +21,7 @@ TableView::Dim TableView::get_dim() const noexcept {
   return Dim(_table.size(), col_size);
 }
 
-void TableView::set_dim(TableView::Dim const &d) noexcept {
+void Table::set_dim(Table::Dim const &d) noexcept {
   // Do nothing if same dimensions
   if (get_dim() == d)
     return;
@@ -34,13 +36,12 @@ void TableView::set_dim(TableView::Dim const &d) noexcept {
   return;
 }
 
-std::expected<void, ViewErr> TableView::set_at(size_t const row,
-                                               size_t const col,
-                                               UI::String &&str) noexcept {
+std::expected<void, WidgetErr> Table::set_at(size_t const row, size_t const col,
+                                             UI::String &&str) noexcept {
   auto const d = get_dim();
 
   if ((col >= d.cols) || (row >= d.rows))
-    return ViewErr(ViewErr::OUT_OF_RANGE);
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
 
@@ -51,13 +52,13 @@ std::expected<void, ViewErr> TableView::set_at(size_t const row,
   return {};
 }
 
-std::expected<void, ViewErr> TableView::update_row(
-    size_t const row,
-    std::vector<std::optional<UI::String>> &&new_row) noexcept {
+std::expected<void, WidgetErr>
+Table::update_row(size_t const row,
+                  std::vector<std::optional<UI::String>> &&new_row) noexcept {
   auto const d = get_dim();
 
   if ((row >= d.rows) || (new_row.size() > d.cols))
-    return ViewErr(ViewErr::OUT_OF_RANGE);
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
 
@@ -74,13 +75,13 @@ std::expected<void, ViewErr> TableView::update_row(
   return {};
 }
 
-std::expected<void, ViewErr> TableView::update_row(
-    size_t const row, size_t const col_offset,
-    std::vector<std::optional<UI::String>> &&new_row) noexcept {
+std::expected<void, WidgetErr>
+Table::update_row(size_t const row, size_t const col_offset,
+                  std::vector<std::optional<UI::String>> &&new_row) noexcept {
   auto const d = get_dim();
 
   if ((row >= d.rows) || ((new_row.size() + col_offset) > d.cols))
-    return ViewErr(ViewErr::OUT_OF_RANGE);
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
 
@@ -98,13 +99,13 @@ std::expected<void, ViewErr> TableView::update_row(
   return {};
 }
 
-std::expected<void, ViewErr> TableView::update_col(
-    size_t const col,
-    std::vector<std::optional<UI::String>> &&new_col) noexcept {
+std::expected<void, WidgetErr>
+Table::update_col(size_t const col,
+                  std::vector<std::optional<UI::String>> &&new_col) noexcept {
   auto const d = get_dim();
 
   if ((col >= d.cols) || (new_col.size() > d.cols))
-    return ViewErr(ViewErr::OUT_OF_RANGE);
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
 
@@ -121,13 +122,13 @@ std::expected<void, ViewErr> TableView::update_col(
   return {};
 }
 
-std::expected<void, ViewErr> TableView::update_col(
-    size_t const col, size_t const row_offset,
-    std::vector<std::optional<UI::String>> &&new_col) noexcept {
+std::expected<void, WidgetErr>
+Table::update_col(size_t const col, size_t const row_offset,
+                  std::vector<std::optional<UI::String>> &&new_col) noexcept {
   auto const d = get_dim();
 
   if ((col >= d.cols) || (new_col.size() > d.cols))
-    return ViewErr(ViewErr::OUT_OF_RANGE);
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
 
@@ -144,12 +145,12 @@ std::expected<void, ViewErr> TableView::update_col(
   return {};
 }
 
-std::expected<void, ViewErr> TableView::clear_at(size_t const row,
-                                                 size_t const col) noexcept {
+std::expected<void, WidgetErr> Table::clear_at(size_t const row,
+                                               size_t const col) noexcept {
   auto const d = get_dim();
 
   if ((col >= d.cols) || (row >= d.rows))
-    return ViewErr(ViewErr::OUT_OF_RANGE);
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
   _table.at(row).at(col) = std::optional<UI::String>{};
@@ -157,7 +158,7 @@ std::expected<void, ViewErr> TableView::clear_at(size_t const row,
   return {};
 }
 
-void TableView::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
+void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   std::shared_lock lock(_mtx);
 
   size_t row_idx = 0;
@@ -172,7 +173,7 @@ void TableView::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   }
 }
 
-void TableView::clear() noexcept {
+void Table::clear() noexcept {
   auto d = get_dim();
   std::unique_lock lock(_mtx);
   _table = std::vector<std::vector<std::optional<UI::String>>>(

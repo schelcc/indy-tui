@@ -1,14 +1,10 @@
 
 #include <memory>
 
-#include "columns.hpp"
 #include "core/workers.hpp"
 
 #include "core/time.hpp"
-#include "draw.hpp"
 #include "tools/logger.hpp"
-#include "ui.hpp"
-#include "ui/layout.hpp"
 #include "ui/widget.hpp"
 
 namespace Workers {
@@ -25,20 +21,17 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
   //     std_plane);
   // auto &w = base_container.add_widget<UI::TextBox>(1);
 
-  UI::TableView table{};
+  UI::Table table{};
 
-  table.set_dim(UI::TableView::Dim{4, 3});
+  table.set_dim(UI::Table::Dim{4, 3});
 
   std::expected<void, UI::ViewErr> res;
 
   // Set column names
-  res = table.update_row(
-      0, {UI::String("Qty."), UI::String("Value"), UI::String("Empty")});
+  res = table.update_row(0, {"Qty.", "Value", "Empty"});
 
   // Set row names
-  res = table.update_col(0, 1,
-                         {UI::String("Cycles"), UI::String("Cycles quot. 5"),
-                          UI::String("Cycles quot. 10")});
+  res = table.update_col(0, 1, {"Cycles", "Cycles quot. 5", "Cycles quot. 10"});
 
   size_t cnt = 0;
 
@@ -47,10 +40,7 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
     auto block_until = render_start + MAX_REDRAW_HZ;
 
     // Update column values
-    res = table.update_col(1, 1,
-                           {UI::String(std::to_string(cnt)),
-                            UI::String(std::to_string(cnt / 5)),
-                            UI::String(std::to_string(cnt / 10))});
+    res = table.update_col(1, 1, {cnt, cnt / 5, cnt / 10});
 
     table.apply(std_plane);
 

@@ -4,47 +4,80 @@
 #include <execution>
 #include <expected>
 #include <memory>
-#include <mutex>
-#include <ncpp/Plane.hh>
 #include <shared_mutex>
 #include <vector>
 
-#include "core/input.hpp"
-#include "string.hpp"
-#include "tools/draw.hpp"
-#include "ui/ui.hpp"
+#include <ncpp/Plane.hh>
+
+#include "ui/string.hpp"
 
 namespace UI {
 
-enum class LayoutDirection { HORIZONTAL, VERTICAL };
-enum class FocusDir { NEXT, PREV };
+enum class Align { LEFT, CENTER, RIGHT };
 
-using Segments = size_t;
-
-struct ViewErr {
+struct WidgetErr {
   enum Kind {
     OUT_OF_RANGE,
+    ACTION_DISABLED,
   } kind;
 
   std::optional<std::string> msg = {};
 
-  // Implicit conversion from a ViewErr to std::unexpected(ViewErr) for ease of
-  // use
-  template <typename S> operator std::expected<S, ViewErr>() {
+  // Implicit conversion from a WidgetErr to std::unexpected(WidgetErr) for ease
+  // of use
+  template <typename S> operator std::expected<S, WidgetErr>() {
     return std::unexpected(*this);
   }
 
-  ViewErr(Kind k) : kind(k) {}
-  ViewErr(Kind k, std::string_view m) : kind(k), msg(m) {}
+  WidgetErr(Kind k) : kind(k) {}
+  WidgetErr(Kind k, std::string_view m) : kind(k), msg(m) {}
 };
 
-// Views
-struct TextView {
-  std::variant<std::string, std::wstring, UI::String> text{};
+// Widgets
+struct Text {
+private:
+  std::shared_mutex _mtx;
+
+  /// @brief Text to be rendered.
+  UI::String text{};
+
+public:
+  /// @brief Alignment of text when rendered, defaults to left
+  std::atomic<Align> align = Align::LEFT;
+
+  // TODO - Line wrapping and padding behavior
+  /// @brief How far from the area's left edge should be left untouched,
+  /// defaults 0
+  std::atomic_size_t padding_left = 0;
+
+  /// @brief How far from the area's top edge should be top untouched, defaults
+  /// 0
+  std::atomic_size_t padding_top = 0;
+
+  /// @brief How far from the area's right edge should be right untouched,
+  /// defaults 0
+  std::atomic_size_t padding_right = 0;
+
+  /// @brief How far from the area's bottom edge should be bottom untouched,
+  /// defaults 0
+  std::atomic_size_t padding_bottom = 0;
+
+  /** @brief Append the given text to the existing text. */
+  void append(UI::String &&) noexcept;
+
+  /** @brief Replace all existing text with the given text. */
+  void update(UI::String &&) noexcept;
+
+  /** @brief Clear the existing text. */
+  void clear() noexcept;
+
+  /** @brief Apply the existing text onto the given plane. Does not synchronize
+   * plane access. */
+  void apply(std::shared_ptr<ncpp::Plane>) noexcept;
 };
 
-/** @brief Interface view for table-based information displays. */
-struct TableView {
+/** @brief Interface widget for table-based information displays. */
+struct Table {
 private:
   mutable std::shared_mutex _mtx;
 
@@ -90,15 +123,15 @@ public:
   /** @brief Set the string at the specified row and column to the given value.
    * Cell must be within the table's current dimensions. Returns expected
    * containing void if successful, otherwise the error which occured. */
-  std::expected<void, ViewErr> set_at(size_t const, size_t const,
-                                      UI::String &&) noexcept;
+  std::expected<void, WidgetErr> set_at(size_t const, size_t const,
+                                        UI::String &&) noexcept;
 
   /** @brief Starting at the zeroth column in the given row,
    * sequentially update the row's cells with the given values. All
    * cells must fit within the table's current dimensions.  Returns
    * expected containing void if successful, otherwise the error which
    * occured. */
-  std::expected<void, ViewErr>
+  std::expected<void, WidgetErr>
   update_row(size_t const, std::vector<std::optional<UI::String>> &&) noexcept;
 
   /** @brief Starting at the specified column in the given row,
@@ -106,7 +139,7 @@ public:
    * cells must fit within the table's current dimensions.  Returns
    * expected containing void if successful, otherwise the error which
    * occured. */
-  std::expected<void, ViewErr>
+  std::expected<void, WidgetErr>
   update_row(size_t const, size_t const,
              std::vector<std::optional<UI::String>> &&) noexcept;
 
@@ -115,7 +148,7 @@ public:
    * cells must fit within the table's current dimensions.  Returns
    * expected containing void if successful, otherwise the error which
    * occured. */
-  std::expected<void, ViewErr>
+  std::expected<void, WidgetErr>
   update_col(size_t const, std::vector<std::optional<UI::String>> &&) noexcept;
 
   /** @brief Starting at the specified row in the given column,
@@ -123,12 +156,12 @@ public:
    * cells must fit within the table's current dimensions.  Returns
    * expected containing void if successful, otherwise the error which
    * occured. */
-  std::expected<void, ViewErr>
+  std::expected<void, WidgetErr>
   update_col(size_t const, size_t const,
              std::vector<std::optional<UI::String>> &&) noexcept;
 
   /** @brief Set the specified cell to empty. */
-  std::expected<void, ViewErr> clear_at(size_t const, size_t const) noexcept;
+  std::expected<void, WidgetErr> clear_at(size_t const, size_t const) noexcept;
 
   /** @brief Set all cells to empty. Maintains current dimensions. */
   void clear() noexcept;
