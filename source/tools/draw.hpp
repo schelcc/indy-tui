@@ -96,29 +96,6 @@ enum class Target {
   BG,
 };
 
-static inline uint64_t mask_pal_channels(std::unique_ptr<ncpp::Plane> &p,
-                                         Target const target,
-                                         PaletteColors const color) {
-  uint64_t chan = p->get_channels();
-
-  if (color == PaletteColors::NONE)
-    return chan;
-
-  ncpp::Palette pal{};
-
-  unsigned int r;
-  unsigned int g;
-  unsigned int b;
-
-  pal.get(static_cast<int>(color), r, g, b);
-
-  if (target == Target::FG)
-    ncchannels_set_fg_rgb8(&chan, r, g, b);
-  else
-    ncchannels_set_bg_rgb8(&chan, r, g, b);
-
-  return chan;
-}
 static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
                                          Target const target,
                                          PaletteColors const color) {
@@ -156,6 +133,13 @@ static inline std::string trunc_str(std::string_view const s,
   return s.length() <= (max_len - 3)
              ? std::string{s}
              : std::string{s.substr(0, max_len)} + "...";
+}
+
+static inline void border(std::shared_ptr<ncpp::Plane> p,
+                          PaletteColors color = PaletteColors::NONE) {
+  auto chan = mask_pal_channels(p, Target::FG, color);
+
+  p->perimeter_rounded(ncpp::NCBox::CornerMask, chan, 0);
 }
 
 static inline void
