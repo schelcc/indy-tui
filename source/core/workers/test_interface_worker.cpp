@@ -25,7 +25,7 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
 
   table.set_dim(UI::Table::Dim{4, 3});
 
-  std::expected<void, UI::ViewErr> res;
+  std::expected<void, UI::WidgetErr> res;
 
   // Set column names
   res = table.update_row(0, {"Qty.", "Value", "Empty"});
