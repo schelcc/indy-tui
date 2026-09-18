@@ -23,4 +23,14 @@ template <typename... Ts> struct Overload : Ts... {
   using Ts::operator()...;
 };
 
+/** @brief Requires T be both copy assignable and constructible. */
+template <typename T>
+concept CopySafe =
+    (std::is_copy_assignable_v<T> && std::is_copy_constructible_v<T>);
+
+/** @brief Requires T be both move assignable and constructible. */
+template <typename T>
+concept MoveSafe =
+    (std::is_move_assignable_v<T> && std::is_move_constructible_v<T>);
+
 }; // namespace Core
