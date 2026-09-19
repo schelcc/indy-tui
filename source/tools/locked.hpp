@@ -22,43 +22,20 @@ public:
            S &&v)
       : lock(std::move(l)), val(std::forward<S>(v)) {}
 
-  // If T can be dereferenced, return a (possibly const) reference to T
-  U const &operator->() const &
-    requires(requires(T t) { *t; } && std::is_same_v<T, U const &>)
-  {
-    return val;
+  // Return a (possibly const) pointer to T
+  auto operator->() {
+    if constexpr (std::is_same_v<T, U const &>)
+      return static_cast<const U *>(&val);
+    else
+      return static_cast<U *>(&val);
   }
 
-  U &operator->()
-    requires(requires(T t) { *t; } && std::is_same_v<T, U &>)
-  {
-    return val;
-  }
-
-  // If T cannot be dereferenced, return a (possibly const) pointer to it
-  const U *operator->() const &
-    requires(!(requires(T t) { *t; }) && std::is_same_v<T, U const &>)
-  {
-    return &val;
-  }
-
-  U *operator->()
-    requires(!(requires(T t) { *t; }) && std::is_same_v<T, U &>)
-  {
-    return &val;
-  }
-
-  // The deref op should return a (possibly const) reference to T
-  U &operator*()
-    requires(std::is_same_v<T, U &>)
-  {
-    return val;
-  }
-
-  U const &operator*() const &
-    requires(std::is_same_v<T, U const &>)
-  {
-    return val;
+  // Return a (possibly const) ref to T
+  auto &&operator*() {
+    if constexpr (std::is_same_v<T, U const &>)
+      return static_cast<const U &>(val);
+    else
+      return static_cast<U &>(val);
   }
 };
 
