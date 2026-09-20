@@ -57,7 +57,6 @@ Session::next_frame() noexcept {
 
 void Session::set_callbacks(Session::Status const status,
                             std::shared_ptr<ix::WebSocket> socket) {
-  status = status;
   if (status == Status::INITIATING && _source != SessionSource::SERVED_DEBUG) {
     Log::Debug("Set callbacks to initiation configuration", "SESS-SOCKET");
     socket->setOnMessageCallback([this](const ix::WebSocketMessagePtr &msg) {
