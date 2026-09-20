@@ -41,7 +41,7 @@ tests:
 
 
 base_build:
-	cmake -S . -B $(BUILD_DIR) -DCMAKE_CXX_FLAGS="$(CXX_FLAGS)" -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) $(EXTRA_CMAKE_FLAGS) 
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_CXX_FLAGS="$(CXX_FLAGS) $(EXTRA_CXX_FLAGS)" -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) $(EXTRA_CMAKE_FLAGS) 
 	cmake --build $(BUILD_DIR) 
 base_build: fix_cc
 
