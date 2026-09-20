@@ -35,12 +35,12 @@ std::optional<std::string_view> parse_payload(std::string_view const payload) {
 
 namespace Core {
 
-Time::Duration::DblMilliSec Session::get_accrued_delay_ms() noexcept {
+Time::Duration::DblMilliSec Session::get_accrued_delay_ms() const noexcept {
   return _queue.get_accrued_delay_ms();
 }
 
 std::expected<size_t, Telemetry::TelemetryQueue::Err>
-Session::get_delay_sec() noexcept {
+Session::get_delay_sec() const noexcept {
   return _queue.get_delay_sec();
 }
 
@@ -57,7 +57,7 @@ Session::next_frame() noexcept {
 
 void Session::set_callbacks(Session::Status const status,
                             std::shared_ptr<ix::WebSocket> socket) {
-  _status = status;
+  status = status;
   if (status == Status::INITIATING && _source != SessionSource::SERVED_DEBUG) {
     Log::Debug("Set callbacks to initiation configuration", "SESS-SOCKET");
     socket->setOnMessageCallback([this](const ix::WebSocketMessagePtr &msg) {
@@ -248,7 +248,7 @@ void Session::init_on_message(const ix::WebSocketMessagePtr &msg) {
     Log::Debug("Received start ack, starting now...", "SESS-SOCKET");
 
     // Set the first message recv timestamp
-    _last_msg_time = Time::Clock::now();
+    last_msg_time = Time::Clock::now();
 
     // Change callbacks over to started callbacks
     set_callbacks(Status::STARTED, _socket);
@@ -264,8 +264,8 @@ void Session::on_message(const ix::WebSocketMessagePtr &msg) {
 
   // Calculate message recv period
   auto now = Time::Clock::now();
-  _msg_recv_period = now - _last_msg_time.load();
-  _last_msg_time = now;
+  msg_recv_period = now - last_msg_time.load();
+  last_msg_time = now;
 
   auto payload = parse_payload(msg->str);
   if (!payload.has_value())
@@ -297,7 +297,7 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
   if (_source == SessionSource::SERVED_DEBUG ||
       _source == SessionSource::SERVED_REMOTE) {
     std::string status_str{};
-    switch (_status.load()) {
+    switch (status.load()) {
     case Status::NOT_STARTED:
       status_str = "Not Connected";
       break;
@@ -316,7 +316,7 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
   if (delay_res.has_value())
     delay_s = std::format("{} s", delay_res.value());
 
-  double msg_rate = 1000 / _msg_recv_period.load().count();
+  double msg_rate = 1000 / msg_recv_period.load().count();
   UI::Color msg_rate_color;
   if (msg_rate > 9.0)
     msg_rate_color = UI::Color::GREEN_SOFT;
@@ -327,7 +327,7 @@ void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
 
   UI::String msg_rate_str(std::format("{:5.2f} Hz", msg_rate), msg_rate_color);
   Time::Duration::DblMilliSec since_last_msg =
-      Time::Clock::now() - _last_msg_time.load();
+      Time::Clock::now() - last_msg_time.load();
 
   if (since_last_msg.count() > 200)
     msg_rate_str += UI::String(std::format(" (last msg. received {:.2f}s ago)",

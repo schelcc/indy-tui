@@ -23,6 +23,9 @@ namespace Core {
 static constexpr std::array<std::string_view, 3> SessionSourceStrs = {
     "Served Remote", "Served Replay", "Local Replay"};
 
+static constexpr std::array<std::string_view, 3> SessionStatusStrs = {
+    "Not started", "Initiating", "Connected"};
+
 enum class SessionSource {
   SERVED_REMOTE = 0,
   SERVED_DEBUG = 1,
@@ -38,7 +41,7 @@ public:
     } kind;
   };
 
-  enum class Status { NOT_STARTED, INITIATING, STARTED };
+  enum class Status { NOT_STARTED = 0, INITIATING = 1, STARTED = 2 };
 
 private:
   // How long to wait to try to acquire the recieve semaphore
@@ -66,11 +69,6 @@ private:
 
   std::atomic_flag _running{true};
 
-  std::atomic<Status> _status = Status::NOT_STARTED;
-
-  std::atomic<Time::TimePoint> _last_msg_time;
-  std::atomic<Time::Duration::DblMilliSec> _msg_recv_period;
-
   std::vector<std::jthread> _threads{};
 
   /** @brief Callback for message events during initial setup of session. */
@@ -89,13 +87,18 @@ private:
 public:
   Telemetry::TelemetryQueue queue{};
 
+  std::atomic<Time::TimePoint> last_msg_time;
+  std::atomic<Time::Duration::DblMilliSec> msg_recv_period;
+
+  std::atomic<Status> status = Status::NOT_STARTED;
+
   /** @brief Retrieve the configured delay. */
   std::expected<size_t, Telemetry::TelemetryQueue::Err>
-  get_delay_sec() noexcept;
+  get_delay_sec() const noexcept;
 
   /** @brief Get the time delta between the most recent frame and the next frame
    * to dequeue. */
-  Time::Duration::DblMilliSec get_accrued_delay_ms() noexcept;
+  Time::Duration::DblMilliSec get_accrued_delay_ms() const noexcept;
 
   /** @brief Populate the live telemetry status. */
   void draw_telem_status(std::shared_ptr<ncpp::Plane>);
