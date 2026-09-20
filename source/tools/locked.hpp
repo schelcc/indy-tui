@@ -44,7 +44,7 @@ public:
 template <typename T>
   requires(!std::is_pointer_v<T>)
 class Locked {
-  std::shared_mutex _mtx;
+  mutable std::shared_mutex _mtx;
   T _val;
 
 public:
@@ -52,7 +52,10 @@ public:
   Locked(U &&u) : _val(std::forward<U>(u)) {};
 
   LockPair<T &> get_mut() { return {std::unique_lock(_mtx), _val}; }
+  LockPair<T &> get_mut() const = delete;
 
-  LockPair<T const &> get_const() { return {std::shared_lock(_mtx), _val}; }
+  LockPair<T const &> get_const() const {
+    return {std::shared_lock(_mtx), _val};
+  }
 };
 }; // namespace ThreadSafe
