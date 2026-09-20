@@ -33,4 +33,12 @@ template <typename T>
 concept MoveSafe =
     (std::is_move_assignable_v<T> && std::is_move_constructible_v<T>);
 
+/** @brief Requires T is a non-const reference */
+template <typename T>
+concept NotConstRef = std::is_same_v<T, std::remove_cvref_t<T> &>;
+
+/** @brief Requires T is a const reference */
+template <typename T>
+concept ConstRef = std::is_same_v<T, std::remove_cvref_t<T> const &>;
+
 }; // namespace Core
