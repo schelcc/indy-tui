@@ -20,6 +20,7 @@
 
 #include "core.hpp"
 #include "draw.hpp"
+#include "locked.hpp"
 #include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
 #include "telemetry/telemetry_frame.hpp"
@@ -73,71 +74,14 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   ErpMessage message{frame->take_from()};
 
   // Update event-wide information
-  {
-    std::unique_lock lock(_event_info.mtx);
+  session_info.update(message);
 
-    // TrackInformation fields
-    if (message.trackinformation_size() > 0) {
-      proto::telemetry::ErpTrackInformation const &info =
-          message.trackinformation().Get(0);
-
-      if (info.has_trackname())
-        _event_info.track_name = info.trackname();
-
-      // Only do once
-      if (info.has_tracklength() && !_event_info.num_checkpts.has_value()) {
-        _event_info.lap_length = info.tracklength() * Units::METERS_PER_MILE;
-
-        // We get tracklength as miles, so convert to meters and then calculate
-        // the number of checkpoints
-        _event_info.num_checkpts = static_cast<size_t>(
-            std::ceil((info.tracklength() * Units::METERS_PER_MILE) /
-                      DriverTelemetry::CHECKPOINT_DIST));
-      }
-
-      if (info.has_tracktype())
-        _event_info.track_type = info.tracktype();
-    }
-
-    // HeartBeat fields
-    if (message.heartbeats_size() > 0) {
-      proto::telemetry::ErpHeartBeat const &hbeat = message.heartbeats().Get(0);
-
-      if (hbeat.has_eventname())
-        _event_info.event_name = hbeat.eventname();
-
-      if (hbeat.has_series())
-        _event_info.series_name = hbeat.series();
-
-      if (hbeat.has_currentflag())
-        _event_info.flag_status = hbeat.currentflag();
-
-      if (hbeat.has_sessiontype())
-        _event_info.session_type = hbeat.sessiontype();
-
-      if (hbeat.has_sessionstatus())
-        _event_info.session_status = hbeat.sessionstatus();
-
-      if (hbeat.has_overalltimetogo())
-        _event_info.time_to_go = hbeat.overalltimetogo();
-
-      if (hbeat.has_timeofday())
-        _event_info.track_time = hbeat.timeofday();
-
-      if (hbeat.has_completedlaps())
-        _event_info.completed_laps = hbeat.completedlaps();
-
-      if (hbeat.has_totallaps())
-        _event_info.total_laps = hbeat.totallaps();
-    }
-  }
-
-  // Don't move on if we don't yet have track length
-  if (!_event_info.num_checkpts.has_value() ||
-      !_event_info.lap_length.has_value())
+  // Don't move on if we don't yet have track length or total checkpoints
+  if (!session_info.num_checkpts.get_const()->has_value() ||
+      session_info.lap_length.get_const()->has_value())
     return {};
 
-  assert(_event_info.num_checkpts.value() > 0);
+  assert(session_info.num_checkpts.get_const()->value() > 0);
 
   // Check whether the driver is in the map, adding it if not. If the carnumber
   // couldn't be found, return false. If successful, return true. Can add in a
@@ -151,8 +95,11 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
 
       _driver_map[car_num] = _drivers.size();
       _drivers.emplace_back();
-      _drivers.back().set_checkpoints(_event_info.num_checkpts.value());
-      _drivers.back().set_lap_length(_event_info.lap_length.value());
+
+      auto &d = _drivers.back();
+
+      d.set_checkpoints(session_info.num_checkpts.get_const()->value());
+      d.set_lap_length(session_info.lap_length.get_const()->value());
     }
 
     return true;
@@ -280,47 +227,47 @@ void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
   // planes to simplify later styling & alignment
   plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(), 0);
 
-  std::shared_lock lock(_event_info.mtx);
+  // std::shared_lock lock(_event_info.mtx);
 
-  using Tools::Draw::trunc_str;
+  // using Tools::Draw::trunc_str;
 
-  UI::SimpleTableSketcher put_simple_field(plane, row);
+  // UI::SimpleTableSketcher put_simple_field(plane, row);
 
-  plane->putstr(row++, 1, "Event Information");
+  // plane->putstr(row++, 1, "Event Information");
 
-  put_simple_field("Event Name", _event_info.event_name);
-  put_simple_field("Track Name", _event_info.track_name);
-  put_simple_field("Session Type", _event_info.session_type);
-  put_simple_field("Session Status", _event_info.session_status);
-  put_simple_field("Track Time", _event_info.track_time);
+  // put_simple_field("Event Name", _event_info.event_name);
+  // put_simple_field("Track Name", _event_info.track_name);
+  // put_simple_field("Session Type", _event_info.session_type);
+  // put_simple_field("Session Status", _event_info.session_status);
+  // put_simple_field("Track Time", _event_info.track_time);
 
-  UI::Color flag_color = UI::Color::NONE;
-  if (_event_info.flag_status.has_value()) {
-    std::string &cur_flag = _event_info.flag_status.value();
-    if (cur_flag == "GREEN")
-      flag_color = UI::Color::GREEN_SOFT;
-    else if (cur_flag == "YELLOW")
-      flag_color = UI::Color::YELLOW_SOFT;
-    else if (cur_flag == "RED")
-      flag_color = UI::Color::RED_SOFT;
-    else if (cur_flag == "WARM")
-      flag_color = UI::Color::PURPLE_SOFT;
-  }
+  // UI::Color flag_color = UI::Color::NONE;
+  // if (_event_info.flag_status.has_value()) {
+  //   std::string &cur_flag = _event_info.flag_status.value();
+  //   if (cur_flag == "GREEN")
+  //     flag_color = UI::Color::GREEN_SOFT;
+  //   else if (cur_flag == "YELLOW")
+  //     flag_color = UI::Color::YELLOW_SOFT;
+  //   else if (cur_flag == "RED")
+  //     flag_color = UI::Color::RED_SOFT;
+  //   else if (cur_flag == "WARM")
+  //     flag_color = UI::Color::PURPLE_SOFT;
+  // }
 
-  put_simple_field("Flag Status",
-                   UI::String(_event_info.flag_status.value_or("--"),
-                              flag_color, UI::Style::BOLD) +
-                       "         ");
+  // put_simple_field("Flag Status",
+  //                  UI::String(_event_info.flag_status.value_or("--"),
+  //                             flag_color, UI::Style::BOLD) +
+  //                      "         ");
 
-  put_simple_field(
-      "Laps",
-      std::format(
-          "{} / {}",
-          _event_info.completed_laps.has_value()
-              ? std::format("{}", _event_info.completed_laps.value() + 1)
-              : "--",
-          _event_info.total_laps.has_value()
-              ? std::format("{}", _event_info.total_laps.value())
-              : "--"));
+  // put_simple_field(
+  //     "Laps",
+  //     std::format(
+  //         "{} / {}",
+  //         _event_info.completed_laps.has_value()
+  //             ? std::format("{}", _event_info.completed_laps.value() + 1)
+  //             : "--",
+  //         _event_info.total_laps.has_value()
+  //             ? std::format("{}", _event_info.total_laps.value())
+  //             : "--"));
 }
 }; // namespace Telemetry

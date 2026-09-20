@@ -7,15 +7,14 @@
 #include <ncpp/Plane.hh>
 #include <shared_mutex>
 #include <string>
-#include <type_traits>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "ErpMessage.pb.h"
 #include "columns.hpp"
-#include "core.hpp"
 #include "google/protobuf/repeated_ptr_field.h"
-#include "ui/ui.hpp"
+#include "locked.hpp"
 
 #include <ncpp/Plane.hh>
 
@@ -24,6 +23,46 @@ namespace Telemetry {
 // Forward decl.
 class DriverTelemetry;
 class TelemetryFrame;
+
+enum class SessionType { PRACTICE, RACE, QUALIFYING };
+
+enum class FlagStatus {
+  WARM = 0,
+  YELLOW = 1,
+  GREEN = 2,
+  RED = 3,
+  CHECKERED = 4
+};
+
+struct SessionFlag {
+  std::string text;
+  FlagStatus status;
+
+  static std::string GetText(SessionFlag const &s) { return s.text; }
+  static FlagStatus GetStatus(SessionFlag const &s) { return s.status; }
+};
+
+struct TrackSession {
+  ThreadSafe::Locked<std::optional<std::string>> track_name = std::nullopt;
+  ThreadSafe::Locked<std::optional<std::string>> track_type = std::nullopt;
+  ThreadSafe::Locked<std::optional<size_t>> num_checkpts = std::nullopt;
+
+  ThreadSafe::Locked<std::optional<std::string>> event_name = std::nullopt;
+  ThreadSafe::Locked<std::optional<std::string>> series_name = std::nullopt;
+  ThreadSafe::Locked<std::optional<SessionFlag>> flag_status = std::nullopt;
+  ThreadSafe::Locked<std::optional<SessionType>> session_type = std::nullopt;
+  ThreadSafe::Locked<std::optional<std::string>> session_status = std::nullopt;
+  ThreadSafe::Locked<std::optional<std::string>> time_to_go = std::nullopt;
+  ThreadSafe::Locked<std::optional<std::string>> track_time = std::nullopt;
+
+  ThreadSafe::Locked<std::optional<int>> completed_laps = std::nullopt;
+  ThreadSafe::Locked<std::optional<int>> total_laps = std::nullopt;
+  ThreadSafe::Locked<std::optional<double>> lap_length = std::nullopt;
+
+  /** @brief Fill in as many fields as possible given the current information.
+   * Doesn't reset one-time fields. */
+  void update(proto::telemetry::ErpMessage const &);
+};
 
 /** @brief Represents the collection of telemetry composing the leaderboard. */
 class TelemetryBoard {
@@ -49,10 +88,6 @@ private:
   template <typename Field>
   using ProtoIter = google::protobuf::RepeatedPtrField<Field>;
 
-  // using ColumnFunc = std::function<void(size_t const, DriverTelemetry const
-  // &,
-  //                                       std::shared_ptr<ncpp::Plane>)>;
-  // using ColumnFunc = std::function<Core::MultiStr(DriverTelemetry const &)>;
   using ColumnFunc = std::function<UI::String(DriverTelemetry const &)>;
 
   struct ColumnPair {
@@ -76,35 +111,36 @@ private:
     ColumnPlane() = default;
   };
 
-  struct EventInfo {
-    // Reader(s) should take shared lock on this
-    std::shared_mutex mtx{};
+  // struct EventInfo {
+  //   // Reader(s) should take shared lock on this
+  //   std::shared_mutex mtx{};
 
-    // Question: Should a field not existing in an update after it has existed
-    // prior unset that field? Or should it hang around?
+  //   // Question: Should a field not existing in an update after it has
+  //   existed
+  //   // prior unset that field? Or should it hang around?
 
-    // Found in TrackInformation:
-    std::optional<std::string> track_name = {};
-    std::optional<std::string> track_type = {};
-    std::optional<size_t> num_checkpts = {};
+  //   // Found in TrackInformation:
+  //   std::optional<std::string> track_name = {};
+  //   std::optional<std::string> track_type = {};
+  //   std::optional<size_t> num_checkpts = {};
 
-    // Found in HeartBeat:
-    std::optional<std::string> event_name = {};
-    std::optional<std::string> series_name = {};
-    std::optional<std::string> flag_status = {};
-    std::optional<std::string> session_type = {};
-    std::optional<std::string> session_status = {};
-    std::optional<std::string> time_to_go = {};
-    std::optional<std::string> track_time = {};
-    std::optional<int> completed_laps = {};
-    std::optional<int> total_laps = {};
-    std::optional<double> lap_length = {};
+  //   // Found in HeartBeat:
+  //   std::optional<std::string> event_name = {};
+  //   std::optional<std::string> series_name = {};
+  //   std::optional<std::string> flag_status = {};
+  //   std::optional<std::string> session_type = {};
+  //   std::optional<std::string> session_status = {};
+  //   std::optional<std::string> time_to_go = {};
+  //   std::optional<std::string> track_time = {};
+  //   std::optional<int> completed_laps = {};
+  //   std::optional<int> total_laps = {};
+  //   std::optional<double> lap_length = {};
 
-    /** @brief Update fields given a parsed protobuf message. For fields only
-     * found in per-driver entries, uses the first available driver.
-     * Thread-safe. */
-    void update(proto::telemetry::ErpMessage const &);
-  } _event_info{};
+  //   /** @brief Update fields given a parsed protobuf message. For fields only
+  //    * found in per-driver entries, uses the first available driver.
+  //    * Thread-safe. */
+  //   void update(proto::telemetry::ErpMessage const &);
+  // } _event_info{};
 
   std::shared_mutex _driver_vec_mtx;
   std::shared_mutex _driver_map_mtx;
@@ -126,6 +162,9 @@ private:
   void reassociate_drivers() noexcept;
 
 public:
+  /// @brief Information about the current track session.
+  TrackSession session_info{};
+
   /** @brief Add new column to the board. Does nothing if column is already
    * added. */
   template <Columns::ColumnKind Col>
