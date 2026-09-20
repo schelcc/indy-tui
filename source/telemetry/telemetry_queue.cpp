@@ -35,16 +35,17 @@ TelemetryQueue::set_refresh_hz(size_t const refresh_hz) noexcept {
 }
 
 [[nodiscard]] std::expected<size_t, TelemetryQueue::Err>
-TelemetryQueue::get_delay_sec() noexcept {
+TelemetryQueue::get_delay_sec() const noexcept {
   return _delay_info.get_delay_s();
 }
 
 [[nodiscard]] std::expected<size_t, TelemetryQueue::Err>
-TelemetryQueue::get_refresh_hz() noexcept {
+TelemetryQueue::get_refresh_hz() const noexcept {
   return _delay_info.get_refresh_hz();
 }
 
-[[nodiscard]] DblMilliSec TelemetryQueue::get_accrued_delay_ms() noexcept {
+[[nodiscard]] DblMilliSec
+TelemetryQueue::get_accrued_delay_ms() const noexcept {
   assert(_deq_idx <= _enq_idx);
 
   return static_cast<double>(_enq_idx - _deq_idx) *
@@ -52,7 +53,7 @@ TelemetryQueue::get_refresh_hz() noexcept {
              Time::Duration::DblMilliSec(0));
 }
 
-[[nodiscard]] size_t TelemetryQueue::get_total_frames() noexcept {
+[[nodiscard]] size_t TelemetryQueue::get_total_frames() const noexcept {
   return _delay_info.get_delay_frames().value_or(0);
 }
 

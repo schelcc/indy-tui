@@ -31,7 +31,7 @@ private:
   std::optional<size_t> _total_frames;
   std::optional<Time::Duration::DblMilliSec> _frame_period;
 
-  std::shared_mutex _mtx;
+  mutable std::shared_mutex _mtx;
 
   /** @brief Recalculate all parameters.
    *
@@ -78,39 +78,40 @@ public:
   }
 
   /** @brief Retrieve the delay in seconds. */
-  [[nodiscard]] size_t get_delay_s() {
+  [[nodiscard]] size_t get_delay_s() const {
     std::shared_lock lock(_mtx);
     return _delay_s;
   }
 
   /** @brief Retrieve the refresh rate in Hz. */
-  [[nodiscard]] size_t get_refresh_hz() {
+  [[nodiscard]] size_t get_refresh_hz() const {
     std::shared_lock lock(_mtx);
     return _refresh_hz;
   }
 
   /** @brief Retrieve the total number of delay frames required, if any. */
-  [[nodiscard]] std::optional<size_t> get_delay_frames() {
+  [[nodiscard]] std::optional<size_t> get_delay_frames() const {
     std::shared_lock lock(_mtx);
     return _total_frames;
   }
 
   /** @brief Get the minimum number of delay frames required to satisfy the
    * delay. */
-  [[nodiscard]] size_t get_min_delay_frames() {
+  [[nodiscard]] size_t get_min_delay_frames() const {
     return get_delay_frames()
         .transform([](size_t n) { return n - DELAY_SLOP; })
         .value_or(0);
   }
 
   /** @brief Retrieve the delay period in milliseconds, if any. */
-  [[nodiscard]] std::optional<Time::Duration::DblMilliSec> get_frame_period() {
+  [[nodiscard]] std::optional<Time::Duration::DblMilliSec>
+  get_frame_period() const {
     std::shared_lock lock(_mtx);
     return _frame_period;
   }
 
   /** @brief Determine whether the delay is nonzero. */
-  [[nodiscard]] bool has_delay() {
+  [[nodiscard]] bool has_delay() const {
     std::shared_lock lock(_mtx);
     return _delay_s > 0;
   }
@@ -201,16 +202,17 @@ private:
 public:
   // Delay methods
   /** @brief Retrieve the current configured delay in seconds. */
-  [[nodiscard]] std::expected<size_t, Err> get_delay_sec() noexcept;
+  [[nodiscard]] std::expected<size_t, Err> get_delay_sec() const noexcept;
 
   /** @brief Retrieve the current configured refresh rate in Hertz. */
-  [[nodiscard]] std::expected<size_t, Err> get_refresh_hz() noexcept;
+  [[nodiscard]] std::expected<size_t, Err> get_refresh_hz() const noexcept;
 
   /** @brief Retrieve the delay accrued by the queue in milliseconds. */
-  [[nodiscard]] Time::Duration::DblMilliSec get_accrued_delay_ms() noexcept;
+  [[nodiscard]] Time::Duration::DblMilliSec
+  get_accrued_delay_ms() const noexcept;
 
   /** @brief Retrieve the total number of frames in the queue currently. */
-  [[nodiscard]] size_t get_total_frames() noexcept;
+  [[nodiscard]] size_t get_total_frames() const noexcept;
 
   /** @brief Configure the delay of the queue in seconds. */
   [[nodiscard]] std::expected<void, Err> set_delay_sec(size_t const) noexcept;
