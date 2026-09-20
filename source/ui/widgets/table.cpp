@@ -2,23 +2,37 @@
 #include <cassert>
 #include <iterator>
 #include <mutex>
+#include <ranges>
 
 #include <ncpp/Plane.hh>
+#include <stdexcept>
 
+#include "locked.hpp"
 #include "ui/string.hpp"
 #include "ui/widget.hpp"
 
 namespace UI {
 
+void Table::Column::recalculate_width() {
+  auto to_length = [](UI::String const &s) { return s.size(); };
+
+  auto opt_to_length = [to_length](std::optional<UI::String> const &s) {
+    return s.transform(to_length).value_or(0);
+  };
+
+  max_width = std::ranges::max(rows | std::views::transform(opt_to_length));
+}
+
 Table::Dim Table::get_dim() const noexcept {
   std::shared_lock lock(_mtx);
-  const size_t col_size = (_table.size() > 0) ? _table.at(0).size() : 0;
 
-  assert(std::all_of(
-      std::cbegin(_table), std::cend(_table),
-      [col_size](auto const &col) { return col.size() == col_size; }));
+  const size_t row_size = (_table.size() > 0) ? _table.at(0).rows.size() : 0;
 
-  return Dim(_table.size(), col_size);
+  assert(std::ranges::all_of(_table, [row_size](auto const &col) {
+    return col.rows.size() == row_size;
+  }));
+
+  return Dim(row_size, _table.size());
 }
 
 void Table::set_dim(Table::Dim const &d) noexcept {
@@ -27,11 +41,9 @@ void Table::set_dim(Table::Dim const &d) noexcept {
     return;
 
   std::unique_lock lock(_mtx);
-  _table = std::vector<std::vector<std::optional<UI::String>>>(
-      d.rows, std::vector<std::optional<UI::String>>(
-                  d.cols, std::optional<UI::String>{}));
-
-  _col_widths = std::vector<size_t>(d.cols, 0);
+  _table = std::vector<Column>(
+      d.cols,
+      Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
 
   return;
 }
@@ -45,9 +57,8 @@ std::expected<void, WidgetErr> Table::set_at(size_t const row, size_t const col,
 
   std::unique_lock lock(_mtx);
 
-  _col_widths.at(col) = std::max(_col_widths.at(col), str.size());
-
-  _table.at(row).at(col) = std::move(str);
+  _table.at(col).max_width = std::max(_table.at(col).max_width, str.size());
+  _table.at(col).rows.at(row) = std::move(str);
 
   return {};
 }
@@ -62,15 +73,17 @@ Table::update_row(size_t const row,
 
   std::unique_lock lock(_mtx);
 
-  size_t idx = 0;
-  for (auto const &s : new_row) {
-    _col_widths.at(idx) = std::max(
-        s.transform([](UI::String const &_s) { return _s.size(); }).value_or(0),
-        _col_widths.at(idx));
-    idx++;
-  }
+  size_t col_idx = 0;
+  for (std::optional<UI::String> s : std::move(new_row)) {
+    _table.at(col_idx).max_width = std::max(
+        _table.at(col_idx).max_width, s.transform([](UI::String const &_s) {
+                                         return _s.size();
+                                       }).value_or(0));
 
-  _table.at(row) = std::move(new_row);
+    _table.at(col_idx).rows.at(row) = std::move(s);
+
+    col_idx++;
+  }
 
   return {};
 }
@@ -85,16 +98,17 @@ Table::update_row(size_t const row, size_t const col_offset,
 
   std::unique_lock lock(_mtx);
 
-  size_t idx = col_offset;
-  for (auto const &s : new_row) {
-    _col_widths.at(idx) = std::max(
-        s.transform([](UI::String const &_s) { return _s.size(); }).value_or(0),
-        _col_widths.at(idx));
-    idx++;
-  }
+  size_t col_idx = col_offset;
+  for (std::optional<UI::String> s : std::move(new_row)) {
+    _table.at(col_idx).max_width = std::max(
+        _table.at(col_idx).max_width, s.transform([](UI::String const &_s) {
+                                         return _s.size();
+                                       }).value_or(0));
 
-  std::move(std::begin(new_row), std::end(new_row),
-            std::begin(_table.at(row)) + col_offset);
+    _table.at(col_idx).rows.at(row) = std::move(s);
+
+    col_idx++;
+  }
 
   return {};
 }
@@ -108,16 +122,8 @@ Table::update_col(size_t const col,
     return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
-
-  auto &cur_width = _col_widths.at(col);
-
-  size_t row_idx = 0;
-  for (auto &&s : new_col) {
-    cur_width = std::max(cur_width, s.transform([](UI::String const &s) {
-                                       return s.size();
-                                     }).value_or(2));
-    _table.at(row_idx++).at(col) = std::move(s);
-  }
+  _table.at(col).rows = std::move(new_col);
+  _table.at(col).recalculate_width();
 
   return {};
 }
@@ -132,17 +138,20 @@ Table::update_col(size_t const col, size_t const row_offset,
 
   std::unique_lock lock(_mtx);
 
-  auto &cur_width = _col_widths.at(col);
+  std::move(std::begin(new_col), std::end(new_col),
+            std::begin(_table.at(col).rows) + static_cast<long>(row_offset));
 
-  size_t row_idx = row_offset;
-  for (auto &&s : new_col) {
-    cur_width = std::max(cur_width, s.transform([](UI::String const &s) {
-                                       return s.size();
-                                     }).value_or(2));
-    _table.at(row_idx++).at(col) = std::move(s);
-  }
+  _table.at(col).recalculate_width();
 
   return {};
+}
+
+ThreadSafe::LockPair<Table::Column::Props &>
+Table::column_props(size_t const col) {
+  if (col > _table.size())
+    throw std::out_of_range("Column not in range");
+
+  return {std::unique_lock(_mtx), _table.at(col).props};
 }
 
 std::expected<void, WidgetErr> Table::clear_at(size_t const row,
@@ -153,7 +162,7 @@ std::expected<void, WidgetErr> Table::clear_at(size_t const row,
     return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
-  _table.at(row).at(col) = std::optional<UI::String>{};
+  _table.at(col).rows.at(col) = std::nullopt;
 
   return {};
 }
@@ -161,25 +170,33 @@ std::expected<void, WidgetErr> Table::clear_at(size_t const row,
 void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   std::shared_lock lock(_mtx);
 
-  size_t row_idx = 0;
-  for (auto const &row : _table) {
-    size_t col_offset = 0;
-    size_t col_idx = 0;
-    for (auto const &col : row) {
-      col.value_or(UI::String("--")).apply_to_plane(p, row_idx, col_offset);
-      col_offset += (_col_widths.at(col_idx++) + column_sep);
+  size_t col_pos = 0;
+  for (auto const &col : _table) {
+    size_t row_offset = 0;
+
+    for (auto const &row : col.rows) {
+      if (col.props.align == Align::LEFT) {
+        row.value_or(empty_cell).apply_to_plane(p, row_offset, col_pos);
+      } else {
+        auto row_s = row.value_or(empty_cell);
+        row_s.apply_to_plane(p, row_offset,
+                             col_pos +
+                                 ((col.props.align == Align::RIGHT)
+                                      ? col.max_width - row_s.size()
+                                      : (col.max_width - row_s.size()) / 2));
+      }
+      row_offset++;
     }
-    row_idx++;
+    col_pos += (col.max_width + column_sep);
   }
 }
 
 void Table::clear() noexcept {
   auto d = get_dim();
   std::unique_lock lock(_mtx);
-  _table = std::vector<std::vector<std::optional<UI::String>>>(
-      d.rows, std::vector<std::optional<UI::String>>(
-                  d.cols, std::optional<UI::String>({})));
-  _col_widths = std::vector<size_t>(d.cols, 0);
+  _table = std::vector<Column>(
+      d.cols,
+      Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
 }
 
 }; // namespace UI

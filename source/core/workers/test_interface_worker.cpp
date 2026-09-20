@@ -24,6 +24,9 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
   UI::Table table{};
 
   table.set_dim(UI::Table::Dim{4, 3});
+  table.column_sep = 1;
+  table.column_props(0)->align = UI::Align::RIGHT;
+  table.column_props(1)->align = UI::Align::CENTER;
 
   std::expected<void, UI::WidgetErr> res;
 

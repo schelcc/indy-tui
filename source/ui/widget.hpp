@@ -9,6 +9,7 @@
 
 #include <ncpp/Plane.hh>
 
+#include "locked.hpp"
 #include "ui/string.hpp"
 
 namespace UI {
@@ -78,16 +79,6 @@ public:
 
 /** @brief Interface widget for table-based information displays. */
 struct Table {
-private:
-  mutable std::shared_mutex _mtx;
-
-  // IMPROVEMENT : Switch to columns of rows and save on computation of column
-  // widths
-
-  // Rows of columns
-  std::vector<std::vector<std::optional<UI::String>>> _table{};
-  std::vector<size_t> _col_widths{};
-
 public:
   /** @brief Dataclass to store table's dimensions. */
   struct Dim {
@@ -99,6 +90,30 @@ public:
     }
   };
 
+  /** @brief Dataclass to store column-based formatting properties. */
+  struct Column {
+    std::vector<std::optional<UI::String>> rows;
+    size_t max_width = 0;
+
+    struct Props {
+      Align align = Align::LEFT;
+    } props{};
+
+    /** @brief Recalculate this column's max_width. */
+    void recalculate_width();
+  };
+
+private:
+  mutable std::shared_mutex _mtx;
+
+  // IMPROVEMENT : Switch to columns of rows and save on computation of column
+  // widths
+
+  // Columns of rows
+  // std::vector<std::vector<std::optional<UI::String>>> _table{};
+  std::vector<Column> _table{};
+
+public:
   // Properties
 
   /// @brief Spacing between columns, defaults to 1
@@ -116,6 +131,10 @@ public:
 
   /** @brief Set the table's dimensions. Fully clears the table. */
   void set_dim(Dim const &) noexcept;
+
+  /** @brief Access a column's properties. Throws if column is not within range.
+   */
+  ThreadSafe::LockPair<Column::Props &> column_props(size_t const);
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
   void apply(std::shared_ptr<ncpp::Plane>) const noexcept;
