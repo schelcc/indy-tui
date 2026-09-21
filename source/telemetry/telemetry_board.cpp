@@ -46,7 +46,7 @@ TelemetryFrame::TelemetryFrame(std::string &&payload) noexcept
 
 void TelemetryBoard::reassociate_drivers() noexcept {
   // TODO: Figure out error handling
-  std::shared_lock map_lock(_driver_map_mtx);
+  std::unique_lock map_lock(_driver_map_mtx);
   {
     std::shared_lock vec_lock(_driver_vec_mtx);
     assert(_drivers.size() == _driver_map.size());
@@ -78,7 +78,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
 
   // Don't move on if we don't yet have track length or total checkpoints
   if (!session_info.num_checkpts.get_const()->has_value() ||
-      session_info.lap_length.get_const()->has_value())
+      !session_info.lap_length.get_const()->has_value())
     return {};
 
   assert(session_info.num_checkpts.get_const()->value() > 0);

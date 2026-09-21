@@ -21,6 +21,7 @@ TrackSessionView::TrackSessionView() : table() {
   table.set_dim(Table::Dim(ROWS, COLS));
   table.empty_cell = "";
   table.column_sep = 2u;
+  table.column_props(0)->align = Align::RIGHT;
 }
 
 void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,

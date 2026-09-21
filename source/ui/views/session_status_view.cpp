@@ -16,6 +16,7 @@ SessionStatusView::SessionStatusView() : table() {
   table.empty_cell = "";
   auto res = table.update_col(0, {"Connection Status", "Message Rate",
                                   "Configured Delay", "Delay Amount"});
+  table.column_props(0)->align = Align::RIGHT;
 }
 
 void SessionStatusView::update_and_render(Core::Session const &sess,
