@@ -48,6 +48,11 @@ class Locked {
   T _val;
 
 public:
+  // Permit a default ctor only if T has one
+  Locked()
+    requires(std::is_default_constructible_v<T>)
+      : _val() {}
+
   template <typename U = std::remove_cv_t<T>>
   Locked(U &&u) : _val(std::forward<U>(u)) {};
 
