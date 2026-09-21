@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <functional>
 #include <iterator>
 #include <mutex>
 #include <ranges>
@@ -13,14 +14,12 @@
 
 namespace UI {
 
-void Table::Column::recalculate_width() {
-  auto to_length = [](UI::String const &s) { return s.size(); };
-
-  auto opt_to_length = [to_length](std::optional<UI::String> const &s) {
-    return s.transform(to_length).value_or(0);
-  };
-
-  max_width = std::ranges::max(rows | std::views::transform(opt_to_length));
+void Table::Column::recalculate_width(UI::String const &default_str) {
+  max_width = std::ranges::max(
+      rows |
+      std::views::transform([&default_str](std::optional<UI::String> const &s) {
+        return s.value_or(default_str).size();
+      }));
 }
 
 Table::Dim Table::get_dim() const noexcept {
@@ -118,12 +117,12 @@ Table::update_col(size_t const col,
                   std::vector<std::optional<UI::String>> &&new_col) noexcept {
   auto const d = get_dim();
 
-  if ((col >= d.cols) || (new_col.size() > d.cols))
+  if ((col >= d.cols) || (new_col.size() > d.rows))
     return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
   _table.at(col).rows = std::move(new_col);
-  _table.at(col).recalculate_width();
+  _table.at(col).recalculate_width(empty_cell);
 
   return {};
 }
@@ -133,7 +132,7 @@ Table::update_col(size_t const col, size_t const row_offset,
                   std::vector<std::optional<UI::String>> &&new_col) noexcept {
   auto const d = get_dim();
 
-  if ((col >= d.cols) || (new_col.size() > d.cols))
+  if ((col >= d.cols) || ((new_col.size() + row_offset) > d.rows))
     return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
@@ -141,7 +140,7 @@ Table::update_col(size_t const col, size_t const row_offset,
   std::move(std::begin(new_col), std::end(new_col),
             std::begin(_table.at(col).rows) + static_cast<long>(row_offset));
 
-  _table.at(col).recalculate_width();
+  _table.at(col).recalculate_width(empty_cell);
 
   return {};
 }
@@ -170,9 +169,9 @@ std::expected<void, WidgetErr> Table::clear_at(size_t const row,
 void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   std::shared_lock lock(_mtx);
 
-  size_t col_pos = 0;
+  size_t col_pos = 1;
   for (auto const &col : _table) {
-    size_t row_offset = 0;
+    size_t row_offset = 1;
 
     for (auto const &row : col.rows) {
       if (col.props.align == Align::LEFT) {
@@ -198,5 +197,4 @@ void Table::clear() noexcept {
       d.cols,
       Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
 }
-
 }; // namespace UI

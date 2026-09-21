@@ -4,6 +4,7 @@
 #include <execution>
 #include <expected>
 #include <memory>
+#include <ranges>
 #include <shared_mutex>
 #include <vector>
 
@@ -100,7 +101,7 @@ public:
     } props{};
 
     /** @brief Recalculate this column's max_width. */
-    void recalculate_width();
+    void recalculate_width(UI::String const &);
   };
 
 private:
@@ -184,6 +185,8 @@ public:
 
   /** @brief Set all cells to empty. Maintains current dimensions. */
   void clear() noexcept;
+
+  Table() = default;
 };
 
 }; // namespace UI
