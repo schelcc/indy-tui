@@ -1,7 +1,10 @@
 #include "ErpMessage.pb.h"
 
 #include "core/units.hpp"
+#include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
+
+#include <cmath>
 
 namespace Telemetry {
 

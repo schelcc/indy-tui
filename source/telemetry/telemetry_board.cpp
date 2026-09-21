@@ -154,8 +154,8 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   return {};
 }
 
-void TelemetryBoard::draw_columns() {
-
+ThreadSafe::LockPair<std::vector<DriverTelemetry> const &>
+TelemetryBoard::reorder_and_get() {
   // Order drivers by rank
   {
     std::unique_lock lock(_driver_vec_mtx);
@@ -168,7 +168,7 @@ void TelemetryBoard::draw_columns() {
 
   // Calculate each driver's gap to leader
   {
-    std::shared_lock lock(_driver_vec_mtx);
+    std::unique_lock lock(_driver_vec_mtx);
     if (_drivers.size() >= 2) {
       auto &leader = _drivers.front();
       size_t prev_idx = 0;
@@ -185,89 +185,8 @@ void TelemetryBoard::draw_columns() {
     }
   }
 
-  std::shared_lock lock(_column_planes_mtx);
-  auto v = std::views::zip(_column_planes, _columns);
-  std::for_each(
-      std::execution::par, std::begin(v), std::end(v),
-      [&, this](auto plane_col_pair) -> void {
-        ColumnPlane &col_plane = std::get<0>(plane_col_pair);
-        ColumnPair &col_pair = std::get<1>(plane_col_pair);
-
-        std::scoped_lock col_lock(col_plane.mtx);
-        std::shared_lock driver_lock(_driver_vec_mtx);
-
-        auto &plane = col_plane.plane;
-        auto &func = col_pair.func;
-        auto &name = col_pair.name;
-
-        plane->erase();
-        Tools::Draw::border_with_title(plane, name.data());
-
-        size_t row = 1;
-
-        std::for_each(
-            std::cbegin(_drivers), std::cend(_drivers),
-            [func, &row, &plane](auto const &driver) {
-              std::invoke(func, driver).apply_to_plane(plane, row++, 1);
-            });
-      });
+  // Acquire and return a shared_lock on the drivers vec
+  return {std::shared_lock(_driver_vec_mtx), _drivers};
 }
 
-void TelemetryBoard::draw_event_info(std::shared_ptr<ncpp::Plane> plane) {
-  size_t row = 0;
-
-  // TODO: Add putstr helper to Tools::Draw for stylized text
-
-  // FIX: Gonna start with a very simplistic event info, add to later for
-  // event-specific things (like split group practices and qualifying)
-
-  // FIX: Figure out what to do given row count
-
-  // TODO: Might be good to break the row names and fields into two different
-  // planes to simplify later styling & alignment
-  plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(), 0);
-
-  // std::shared_lock lock(_event_info.mtx);
-
-  // using Tools::Draw::trunc_str;
-
-  // UI::SimpleTableSketcher put_simple_field(plane, row);
-
-  // plane->putstr(row++, 1, "Event Information");
-
-  // put_simple_field("Event Name", _event_info.event_name);
-  // put_simple_field("Track Name", _event_info.track_name);
-  // put_simple_field("Session Type", _event_info.session_type);
-  // put_simple_field("Session Status", _event_info.session_status);
-  // put_simple_field("Track Time", _event_info.track_time);
-
-  // UI::Color flag_color = UI::Color::NONE;
-  // if (_event_info.flag_status.has_value()) {
-  //   std::string &cur_flag = _event_info.flag_status.value();
-  //   if (cur_flag == "GREEN")
-  //     flag_color = UI::Color::GREEN_SOFT;
-  //   else if (cur_flag == "YELLOW")
-  //     flag_color = UI::Color::YELLOW_SOFT;
-  //   else if (cur_flag == "RED")
-  //     flag_color = UI::Color::RED_SOFT;
-  //   else if (cur_flag == "WARM")
-  //     flag_color = UI::Color::PURPLE_SOFT;
-  // }
-
-  // put_simple_field("Flag Status",
-  //                  UI::String(_event_info.flag_status.value_or("--"),
-  //                             flag_color, UI::Style::BOLD) +
-  //                      "         ");
-
-  // put_simple_field(
-  //     "Laps",
-  //     std::format(
-  //         "{} / {}",
-  //         _event_info.completed_laps.has_value()
-  //             ? std::format("{}", _event_info.completed_laps.value() + 1)
-  //             : "--",
-  //         _event_info.total_laps.has_value()
-  //             ? std::format("{}", _event_info.total_laps.value())
-  //             : "--"));
-}
 }; // namespace Telemetry

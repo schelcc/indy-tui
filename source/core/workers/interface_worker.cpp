@@ -5,8 +5,13 @@
 
 #include "core/time.hpp"
 #include "draw.hpp"
+#include "telemetry_board.hpp"
 #include "tools/logger.hpp"
 #include "ui/layout.hpp"
+#include "views.hpp"
+#include "widget.hpp"
+
+using Telemetry::SessionType;
 
 namespace Workers {
 
@@ -41,18 +46,18 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   auto telem_status_plane = header_info_container.add_block(Segments(1));
   auto event_info_plane = header_info_container.add_block(Segments(2));
 
-  assert(board.add_column(board_plane, Columns::Rank{}));
-  assert(board.add_column(board_plane, Columns::DriverName{}));
-  assert(board.add_column(board_plane, Columns::Speed{}));
-  assert(board.add_column(board_plane, Columns::Throttle{}));
-  assert(board.add_column(board_plane, Columns::Brake{}));
-  assert(board.add_column(board_plane, Columns::LastTimingLine{}));
-  assert(board.add_column(board_plane, Columns::Gap{}));
-  assert(board.add_column(board_plane, Columns::Interval{}));
-  assert(board.add_column(board_plane, Columns::LapsSincePit{}));
-  assert(board.add_column(board_plane, Columns::TireType{}));
-  assert(board.add_column(board_plane, Columns::P2P{}));
-  assert(board.add_column(board_plane, Columns::LapDist{}));
+  UI::Views::SessionStatusView sess_status_view{};
+  UI::Views::TrackSessionView event_status_view{};
+  UI::Views::LeaderboardView leaderboard_view{};
+
+  leaderboard_view.set_columns(
+      {{Columns::Rank, "Rank"},
+       {Columns::PitStatus<SessionType::PRACTICE>, " ", UI::Align::RIGHT},
+       {Columns::DriverName<SessionType::PRACTICE>, "Name", UI::Align::RIGHT},
+       {Columns::Speed, "Speed"},
+       {Columns::Throttle, "Throttle"},
+       {Columns::Brake, "Brake"},
+       {Columns::LapDist, "Lap Dist."}});
 
   while (!stop_tok.stop_requested()) {
     auto render_start = Time::Clock::now();
@@ -65,11 +70,9 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
       }
     }
 
-    Tools::Draw::border_with_title(board_plane, "Telemetry");
-
-    board.draw_columns();
-    board.draw_event_info(event_info_plane);
-    sess.draw_telem_status(telem_status_plane);
+    sess_status_view.update_and_render(sess, telem_status_plane);
+    event_status_view.update_and_render(board.session_info, event_info_plane);
+    leaderboard_view.update_and_render(board.reorder_and_get(), board_plane);
 
     nc.render();
 

@@ -100,8 +100,8 @@ public:
    * to dequeue. */
   Time::Duration::DblMilliSec get_accrued_delay_ms() const noexcept;
 
-  /** @brief Populate the live telemetry status. */
-  void draw_telem_status(std::shared_ptr<ncpp::Plane>);
+  // /** @brief Populate the live telemetry status. */
+  // void draw_telem_status(std::shared_ptr<ncpp::Plane>);
 
   /** @brief Initiate the session. Returns an expected with the first error
    * encountered, if any. */
