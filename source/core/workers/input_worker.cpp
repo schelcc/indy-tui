@@ -1,4 +1,5 @@
 #include <atomic>
+#include <mutex>
 #include <vector>
 
 #include <ncpp/NotCurses.hh>
@@ -84,13 +85,12 @@ void KeyWorker::operator()(std::stop_token stop_tok) {
                           KeyWithMod('C', Modifier::CTRL));
 
   while (!stop_tok.stop_requested()) {
-    ncinput in{};
+    std::unique_lock<std::mutex> lock(key_queue_mtx);
+    if (!key_cond.wait(lock, stop_tok, [this] { return !key_queue.empty(); }))
+      return;
 
-    if (nc.get(&INPUT_TIMEOUT, &in) == 0)
-      continue;
-
-    if (in.evtype == ncpp::EvType::Release)
-      handler.handle_input(in);
+    handler.handle_input(key_queue.front());
+    key_queue.pop();
   }
 }
 

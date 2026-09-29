@@ -1,10 +1,12 @@
 #include <memory>
+#include <ncpp/NCKey.hh>
 
 #include "columns.hpp"
 #include "core/workers.hpp"
 
 #include "core/time.hpp"
 #include "draw.hpp"
+#include "input.hpp"
 #include "telemetry_board.hpp"
 #include "tools/logger.hpp"
 #include "ui/layout.hpp"
@@ -77,6 +79,13 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     nc.render();
 
     std_plane->erase();
+
+    ncinput in{};
+    if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Release)) {
+      std::lock_guard lock(key_queue_mtx);
+      key_queue.emplace(Input::KeyWithMod(in));
+      key_cond.notify_one();
+    }
 
     std::this_thread::sleep_until(block_until);
 

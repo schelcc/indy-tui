@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stop_token>
 #include <string_view>
@@ -15,6 +17,7 @@
 
 #include "core/session.hpp"
 #include "core/time.hpp"
+#include "input.hpp"
 #include "tools/strings.hpp"
 
 namespace Workers {
@@ -23,6 +26,10 @@ struct InterfaceWorker {
   ncpp::NotCurses &nc;
   std::atomic_flag &running;
   Core::Session &sess;
+
+  std::condition_variable_any &key_cond;
+  std::queue<Input::KeyWithMod> &key_queue;
+  std::mutex &key_queue_mtx;
 
   /// @brief Maximum interface refresh rate. More than 10 Hz is likely a waste
   /// of resources, and any more than the source telemetry refresh rate is
@@ -48,7 +55,11 @@ struct TestInterfaceWorker {
 
 struct KeyWorker {
   ncpp::NotCurses &nc;
-  std::vector<ncpp::NCKey> &key_queue;
+
+  std::condition_variable_any &key_cond;
+  std::mutex &key_queue_mtx;
+  std::queue<Input::KeyWithMod> &key_queue;
+
   std::atomic_flag &running;
   Core::Session &sess;
   size_t &delay;

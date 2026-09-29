@@ -1,4 +1,5 @@
 #include <atomic>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -23,6 +24,7 @@
 #include "core/session.hpp"
 #include "core/workers.hpp"
 
+#include "input.hpp"
 #include "tools/logger.hpp"
 
 int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
@@ -243,7 +245,9 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  std::vector<ncpp::NCKey> key_queue{};
+  std::queue<Input::KeyWithMod> key_queue{};
+  std::mutex key_queue_mtx{};
+  std::condition_variable_any key_cond{};
 
   std::atomic_flag running{true};
   Core::Session sess(parser.get<Arg, Core::SessionSource>("mode"));
@@ -262,9 +266,11 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   ncpp::NotCurses nc{nc_opts};
 
-  std::jthread output_thread{Workers::InterfaceWorker{nc, running, sess}};
-  std::jthread input_thread{
-      Workers::KeyWorker{nc, key_queue, running, sess, delay}};
+  std::jthread output_thread{Workers::InterfaceWorker{
+      nc, running, sess, key_cond, key_queue, key_queue_mtx}};
+
+  std::jthread input_thread{Workers::KeyWorker{
+      nc, key_cond, key_queue_mtx, key_queue, running, sess, delay}};
 
   pthread_setname_np(output_thread.native_handle(), "Display");
   pthread_setname_np(input_thread.native_handle(), "Input");
