@@ -64,8 +64,11 @@ void LeaderboardView::update_and_render(
 
   auto locked_table = table.get_mut();
 
-  assert(locked_table->get_dim().cols == _cols.get_const()->size());
-  assert(locked_table->get_dim().rows == *_num_drivers.get_const());
+  auto dim = locked_table->get_dim();
+
+  assert(dim.cols == _cols.get_const()->size());
+  assert(dim.rows == *_num_drivers.get_const());
+  assert(dim.rows == drivers->size());
 
   for (auto const &[idx, col] : std::views::enumerate(*_cols.get_const())) {
     auto _ = locked_table->update_col(
