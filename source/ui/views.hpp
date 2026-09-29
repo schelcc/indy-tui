@@ -81,7 +81,7 @@ struct LeaderboardView {
   void set_num_drivers(size_t const);
 
   void update_and_render(
-      ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const &> &&,
+      ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
       std::shared_ptr<ncpp::Plane>);
 
   LeaderboardView();
@@ -90,9 +90,9 @@ private:
   ThreadSafe::Locked<std::vector<ColumnInfo>> _cols;
   ThreadSafe::Locked<size_t> _num_drivers;
 
-  void reconstruct_table(ThreadSafe::LockPair<UI::Table &> &&,
-                         ThreadSafe::LockPair<std::vector<ColumnInfo> &> &&,
-                         ThreadSafe::LockPair<size_t &> &&);
+  void reconstruct_table(ThreadSafe::LockPair<UI::Table> &&,
+                         ThreadSafe::LockPair<std::vector<ColumnInfo>> &&,
+                         ThreadSafe::LockPair<size_t> &&);
 };
 
 }; // namespace UI::Views

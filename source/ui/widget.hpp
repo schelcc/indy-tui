@@ -135,7 +135,7 @@ public:
 
   /** @brief Access a column's properties. Throws if column is not within range.
    */
-  ThreadSafe::LockPair<Column::Props &> column_props(size_t const);
+  ThreadSafe::LockPair<Column::Props> column_props(size_t const);
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
   void apply(std::shared_ptr<ncpp::Plane>) const noexcept;

@@ -35,9 +35,9 @@ void LeaderboardView::set_num_drivers(size_t const num) {
 }
 
 void LeaderboardView::reconstruct_table(
-    LockPair<UI::Table &> &&locked_table,
-    LockPair<std::vector<ColumnInfo> &> &&locked_columns,
-    LockPair<size_t &> &&locked_num) {
+    LockPair<UI::Table> &&locked_table,
+    LockPair<std::vector<ColumnInfo>> &&locked_columns,
+    LockPair<size_t> &&locked_num) {
 
   // Reset dimensions, adding 1 row to account for column titles
   locked_table->set_dim(Table::Dim(*locked_num, locked_columns->size()));
@@ -48,7 +48,7 @@ void LeaderboardView::reconstruct_table(
 }
 
 void LeaderboardView::update_and_render(
-    ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const &>
+    ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
     std::shared_ptr<ncpp::Plane> p) {
   // TODO - Figure out a better spot for this

@@ -145,7 +145,7 @@ Table::update_col(size_t const col, size_t const row_offset,
   return {};
 }
 
-ThreadSafe::LockPair<Table::Column::Props &>
+ThreadSafe::LockPair<Table::Column::Props>
 Table::column_props(size_t const col) {
   if (col > _table.size())
     throw std::out_of_range("Column not in range");

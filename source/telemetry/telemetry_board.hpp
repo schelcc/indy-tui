@@ -113,7 +113,7 @@ public:
    * perform full-board calculations, then return a LockPair
    * containing a reference to the drivers vec and an active
    * shared_lock on it. */
-  ThreadSafe::LockPair<std::vector<DriverTelemetry> const &> reorder_and_get();
+  ThreadSafe::LockPair<std::vector<DriverTelemetry> const> reorder_and_get();
 };
 
 }; // namespace Telemetry

@@ -154,7 +154,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   return {};
 }
 
-ThreadSafe::LockPair<std::vector<DriverTelemetry> const &>
+ThreadSafe::LockPair<std::vector<DriverTelemetry> const>
 TelemetryBoard::reorder_and_get() {
   // Order drivers by rank
   {
