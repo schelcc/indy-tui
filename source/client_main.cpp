@@ -285,6 +285,8 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   sess.end_session();
 
+  nc.stop();
+
   Tools::Log::Info("Exiting (graceful)...");
   std::println("Done.");
 }

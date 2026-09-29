@@ -86,7 +86,6 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   }
 
   Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
-  nc.stop();
 }
 
 }; // namespace Workers
