@@ -2,6 +2,7 @@
 #include <ncpp/Plane.hh>
 #include <string>
 
+#include "draw.hpp"
 #include "string.hpp"
 #include "telemetry/telemetry_board.hpp"
 
@@ -62,6 +63,7 @@ void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
         1, {"Time left", sess.time_to_go.get_const()->value_or("--:--:--")});
 
   table.apply(p);
+  Tools::Draw::border_with_title(p, "Event Status");
 }
 
 }; // namespace UI::Views

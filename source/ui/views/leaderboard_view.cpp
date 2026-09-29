@@ -1,3 +1,4 @@
+#include "draw.hpp"
 #include "driver_telemetry.hpp"
 #include "logger.hpp"
 #include "ui/views.hpp"
@@ -81,6 +82,7 @@ void LeaderboardView::update_and_render(
 
   p->erase();
   locked_table->apply(p);
+  Tools::Draw::border_with_title(p, "Leaderboard");
 }
 
 }; // namespace UI::Views

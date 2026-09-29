@@ -3,6 +3,7 @@
 
 #include "core/session.hpp"
 
+#include "draw.hpp"
 #include "ui/views.hpp"
 #include "ui/widget.hpp"
 
@@ -54,6 +55,8 @@ void SessionStatusView::update_and_render(Core::Session const &sess,
 
   if (res.has_value())
     table.apply(p);
+
+  Tools::Draw::border_with_title(p, "Session Status");
 }
 
 }; // namespace UI::Views
