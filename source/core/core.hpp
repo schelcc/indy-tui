@@ -41,4 +41,20 @@ concept NotConstRef = std::is_same_v<T, std::remove_cvref_t<T> &>;
 template <typename T>
 concept ConstRef = std::is_same_v<T, std::remove_cvref_t<T> const &>;
 
+/** @brief Determine whether the given variant has the given type in its list of
+ * alternatives. */
+template <typename T, typename V, size_t I = 0>
+consteval bool variant_has_alternative() {
+  if constexpr (I >= std::variant_size_v<V>)
+    return false;
+  else if constexpr (!std::is_same_v<std::variant_alternative_t<I, V>, T>)
+    return variant_has_alternative<T, V, I + 1>();
+  else
+    return true;
+}
+
+/** @brief Concept for VariantHasAlternative. */
+template <typename T, typename V>
+concept VariantHasAlternative = variant_has_alternative<T, V>();
+
 }; // namespace Core
