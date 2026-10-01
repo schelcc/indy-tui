@@ -1,7 +1,11 @@
+#include <exception>
+#include <initializer_list>
 #include <memory>
 #include <ncpp/NCKey.hh>
+#include <notcurses/nckeys.h>
 
 #include "columns.hpp"
+#include "core.hpp"
 #include "core/workers.hpp"
 
 #include "core/time.hpp"
@@ -28,38 +32,64 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
   last_tick = Time::Clock::now();
 
+  // Create and configure views
+  std::shared_ptr<UI::Views::View> sess_status_view =
+      UI::Views::View::MakeView<UI::Views::SessionStatusView>();
+
+  sess_status_view->set_render_callback(
+      [this](std::shared_ptr<ncpp::Plane> p, UI::Views::View &view) -> void {
+        view.as<UI::Views::SessionStatusView>().update_and_render(sess, p);
+      });
+
+  std::shared_ptr<UI::Views::View> event_status_view =
+      UI::Views::View::MakeView<UI::Views::TrackSessionView>();
+
+  event_status_view->set_render_callback(
+      [&board](std::shared_ptr<ncpp::Plane> p, UI::Views::View &view) -> void {
+        assert(p != nullptr);
+        view.as<UI::Views::TrackSessionView>().update_and_render(
+            board.session_info, p);
+      });
+
+  std::shared_ptr<UI::Views::View> leaderboard_view =
+      UI::Views::View::MakeView<UI::Views::LeaderboardView>();
+
+  leaderboard_view->set_render_callback(
+      [&board](std::shared_ptr<ncpp::Plane> p, UI::Views::View &view) -> void {
+        assert(p != nullptr);
+        view.as<UI::Views::LeaderboardView>().update_and_render(
+            board.reorder_and_get(), p);
+      });
+
   // Build main layout
   using namespace Layout;
-  Container<Direction::VERTICAL, Segments(13)> main_container(std_plane);
 
-  auto header_plane = main_container.add_block(Segments(4));
-  auto board_plane = main_container.add_block(Segments(8));
-  auto footer_plane = main_container.add_block(Segments(1));
+  // Helper to construct the vector to pass into BlockList
+  auto make_row = [](auto &&...blocks) -> std::vector<Block> {
+    std::vector<Block> output{};
+    output.reserve(sizeof...(blocks));
+    (output.emplace_back(std::move(blocks)), ...);
+    return output;
+  };
 
-  // Build header layout
-  Container<Direction::HORIZONTAL, Segments(3)> header_container(header_plane);
+  // Build rows
+  auto info_row =
+      make_row(Block(1, event_status_view), Block(1, sess_status_view));
 
-  auto header_info_plane = header_container.add_block(Segments(2));
-  auto perf_info_plane = header_container.add_block(Segments(1));
+  BlockList root_layout(
+      VERTICAL, make_row(Block(1, BlockList(HORIZONTAL, std::move(info_row))),
+                         Block(1, leaderboard_view)));
 
-  Container<Direction::VERTICAL, Segments(3)> header_info_container(
-      header_info_plane);
+  root_layout.solve(std_plane);
 
-  auto telem_status_plane = header_info_container.add_block(Segments(1));
-  auto event_info_plane = header_info_container.add_block(Segments(2));
-
-  UI::Views::SessionStatusView sess_status_view{};
-  UI::Views::TrackSessionView event_status_view{};
-  UI::Views::LeaderboardView leaderboard_view{};
-
-  leaderboard_view.set_columns(
+  leaderboard_view->as<UI::Views::LeaderboardView>().set_columns(
       {{Columns::Rank, "Rank"},
        {Columns::PitStatus<SessionType::PRACTICE>, " ", UI::Align::RIGHT},
-       {Columns::DriverName<SessionType::PRACTICE>, "Name", UI::Align::RIGHT},
-       {Columns::Speed, "Speed"},
-       {Columns::Throttle, "Throttle"},
-       {Columns::Brake, "Brake"},
-       {Columns::LapDist, "Lap Dist."}});
+       {Columns::DriverName<SessionType::PRACTICE>, "Name", UI::Align::LEFT}});
+
+  uint pre_dim_x = 0;
+  uint pre_dim_y = 0;
+  std_plane->get_dim(&pre_dim_y, &pre_dim_x);
 
   while (!stop_tok.stop_requested()) {
     auto render_start = Time::Clock::now();
@@ -72,9 +102,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
       }
     }
 
-    sess_status_view.update_and_render(sess, telem_status_plane);
-    event_status_view.update_and_render(board.session_info, event_info_plane);
-    leaderboard_view.update_and_render(board.reorder_and_get(), board_plane);
+    root_layout.render();
 
     nc.render();
 
@@ -87,7 +115,13 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
       key_cond.notify_one();
     }
 
-    std::this_thread::sleep_until(block_until);
+    if ((std_plane->get_dim_y() != pre_dim_y) ||
+        (std_plane->get_dim_x() != pre_dim_x))
+      root_layout.solve(std_plane);
+    else
+      std::this_thread::sleep_until(block_until);
+
+    std_plane->get_dim(&pre_dim_y, &pre_dim_x);
 
     Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
 

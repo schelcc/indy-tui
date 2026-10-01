@@ -1,16 +1,24 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <execution>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <ranges>
 #include <shared_mutex>
+#include <utility>
+#include <variant>
 #include <vector>
 
 #include <ncpp/Plane.hh>
 
-#include "locked.hpp"
+#include "core/core.hpp"
+#include "core/input.hpp"
+
+#include "tools/locked.hpp"
+
 #include "ui/string.hpp"
 
 namespace UI {
@@ -35,6 +43,13 @@ struct WidgetErr {
   WidgetErr(Kind k, std::string_view m) : kind(k), msg(m) {}
 };
 
+template <typename V>
+concept WidgetLike = requires(V v, Input::KeyWithMod &k) {
+  // Must take in input, return bool denoting whether it used
+  // the input
+  { v.take_input(k) } -> std::same_as<bool>;
+};
+
 // Widgets
 struct Text {
 private:
@@ -50,19 +65,21 @@ public:
   // TODO - Line wrapping and padding behavior
   /// @brief How far from the area's left edge should be left untouched,
   /// defaults 0
-  std::atomic_size_t padding_left = 0;
+  std::atomic_uint16_t padding_left = 0;
 
   /// @brief How far from the area's top edge should be top untouched, defaults
   /// 0
-  std::atomic_size_t padding_top = 0;
+  std::atomic_uint16_t padding_top = 0;
 
   /// @brief How far from the area's right edge should be right untouched,
   /// defaults 0
-  std::atomic_size_t padding_right = 0;
+  std::atomic_uint16_t padding_right = 0;
 
   /// @brief How far from the area's bottom edge should be bottom untouched,
   /// defaults 0
-  std::atomic_size_t padding_bottom = 0;
+  std::atomic_uint16_t padding_bottom = 0;
+
+  bool take_input(Input::KeyWithMod &);
 
   /** @brief Append the given text to the existing text. */
   void append(UI::String &&) noexcept;
@@ -118,15 +135,17 @@ public:
   // Properties
 
   /// @brief Spacing between columns, defaults to 1
-  std::atomic_size_t column_sep = 1;
+  std::atomic_uint8_t column_sep = 1;
 
   /// @brief Spacing between rows, defaults to 0
-  std::atomic_size_t row_sep = 1;
+  std::atomic_uint8_t row_sep = 1;
 
   /// @brief Empty cell representation, defaults to "--"
   UI::String empty_cell = "--";
 
   // Methods
+  bool take_input(Input::KeyWithMod &);
+
   /** @brief Retrieve the table's current dimensions. */
   Dim get_dim() const noexcept;
 
@@ -188,5 +207,52 @@ public:
 
   Table() = default;
 };
+
+template <typename... Ts>
+  requires(WidgetLike<Ts> && ...)
+struct _Widget : std::variant<Ts...> {
+  using std::variant<Ts...>::variant;
+  using std::variant<Ts...>::operator=;
+
+  std::optional<std::function<void(std::shared_ptr<ncpp::Plane>)>>
+      render_callback = std::nullopt;
+
+  template <typename T, typename Self>
+    requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
+  auto &&as(this Self &&self) {
+    return std::get<T>(std::forward<Self>(self));
+  }
+
+  template <typename T>
+    requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
+  bool is() {
+    return std::holds_alternative<T>(*this);
+  }
+
+  template <typename T>
+    requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
+  _Widget(T &&t) : std::variant<Ts...>::variant(std::forward<T>(t)) {}
+
+  // template <Core::IsOneOf_ignore_cvref<Ts...> T, typename... Args>
+  // _Widget(Args &&...args)
+  //     : std::variant<Ts...>::variant(std::in_place_type<T>,
+  //                                    std::forward<Args>(args)...) {}
+
+  template <Core::IsOneOf<Ts...> T, typename... Args>
+  static std::shared_ptr<_Widget> MakeWidget(Args &&...args) {
+    return std::make_shared<_Widget>(std::in_place_type<T>,
+                                     std::forward<Args>(args)...);
+  }
+
+  template <typename F>
+    requires(std::is_invocable_r_v<void, F, std::shared_ptr<ncpp::Plane>>)
+  void set_render_callback(F &&f) {
+    render_callback = [f = std::move(f)](std::shared_ptr<ncpp::Plane> p) {
+      f(p);
+    };
+  }
+};
+
+using Widget = _Widget<Text, Table>;
 
 }; // namespace UI

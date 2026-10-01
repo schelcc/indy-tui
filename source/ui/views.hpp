@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 // #include "core/input.hpp"
@@ -11,10 +13,10 @@
 
 #include "driver_telemetry.hpp"
 #include "google/protobuf/repeated_ptr_field.h"
+#include "input.hpp"
 #include "locked.hpp"
 #include "string.hpp"
 #include "telemetry/telemetry_board.hpp"
-#include "telemetry/telemetry_queue.hpp"
 
 #include "ui/widget.hpp"
 
@@ -29,6 +31,8 @@ struct TrackSessionView {
   void update_and_render(Telemetry::TrackSession const &,
                          std::shared_ptr<ncpp::Plane>);
 
+  bool take_input([[maybe_unused]] Input::KeyWithMod &k) { return false; }
+
   TrackSessionView();
 };
 
@@ -39,6 +43,8 @@ struct SessionStatusView {
   static constexpr size_t COLS = 2;
 
   void update_and_render(Core::Session const &, std::shared_ptr<ncpp::Plane>);
+
+  bool take_input([[maybe_unused]] Input::KeyWithMod &k) { return false; }
 
   SessionStatusView();
 };
@@ -84,6 +90,8 @@ struct LeaderboardView {
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
       std::shared_ptr<ncpp::Plane>);
 
+  bool take_input([[maybe_unused]] Input::KeyWithMod &k) { return false; }
+
   LeaderboardView();
 
 private:
@@ -93,6 +101,55 @@ private:
   void reconstruct_table(ThreadSafe::LockPair<UI::Table> &&,
                          ThreadSafe::LockPair<std::vector<ColumnInfo>> &&,
                          ThreadSafe::LockPair<size_t> &&);
+};
+
+using view_variant =
+    std::variant<TrackSessionView, SessionStatusView, LeaderboardView>;
+
+struct View : public view_variant {
+  using view_variant::variant;
+  using view_variant::operator=;
+
+  std::optional<std::function<void(std::shared_ptr<ncpp::Plane>)>>
+      render_callback = std::nullopt;
+
+  template <typename F>
+    requires(
+        std::is_invocable_r_v<void, F, std::shared_ptr<ncpp::Plane>, View &>)
+  void set_render_callback(F &&f) {
+    render_callback = [this, f = std::move(f)](std::shared_ptr<ncpp::Plane> p) {
+      f(p, *this);
+    };
+  }
+
+  template <typename T>
+    requires(Core::VariantHasAlternative<T, view_variant>)
+  auto &&as(this auto &&self) {
+    return std::get<T>(std::forward<decltype(self)>(self));
+  }
+
+  template <typename T>
+    requires(Core::VariantHasAlternative<T, view_variant>)
+  bool is() {
+    return std::holds_alternative<T>(*this);
+  }
+
+  template <typename T, typename... Args>
+    requires(Core::VariantHasAlternative<T, view_variant> &&
+             std::is_constructible_v<T, Args...>)
+  View(Args &&...args)
+      : view_variant(std::in_place_type<T>, std::forward<Args>(args)...) {}
+
+  // template <typename T>
+  //   requires(Core::VariantHasAlternative<T, view_variant>)
+  // View() : view_variant(std::in_place_type<T>) {}
+
+  template <typename T, typename... Args>
+    requires(Core::VariantHasAlternative<T, view_variant>)
+  static std::shared_ptr<View> MakeView(Args &&...args) {
+    return std::make_shared<View>(std::in_place_type<T>,
+                                  std::forward<Args>(args)...);
+  }
 };
 
 }; // namespace UI::Views
