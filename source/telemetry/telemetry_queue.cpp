@@ -114,7 +114,7 @@ TelemetryQueue::enqueue(std::string_view const payload) noexcept {
                ? std::expected<void, TelemetryQueue::Err>{}
                : std::unexpected(Err{Err::FRAME_INVALID});
   } else {
-    Tools::Log::Debug("Enqueue skipped, delay is full", "TELEM-QUEUE");
+    Tools::Log::Debug2("Enqueue skipped, delay is full", "TELEM-QUEUE");
     return std::unexpected(Err{Err::DELAY_FULL});
   }
 }
@@ -138,7 +138,7 @@ TelemetryQueue::dequeue() noexcept {
 
     return std::move(cur_frame.frame);
   } else {
-    Tools::Log::Debug("Dequeue skipped, delay is not ready", "TELEM-QUEUE");
+    Tools::Log::Debug2("Dequeue skipped, delay is not ready", "TELEM-QUEUE");
     return std::unexpected(Err{Err::TOO_RECENT});
   }
 }

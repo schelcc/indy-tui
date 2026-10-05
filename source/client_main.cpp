@@ -213,7 +213,6 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
                         "no reason provided -- ungraceful shutdown")),
         "MAIN");
 
-    // running.clear();
     input_thread.request_stop();
     output_thread.request_stop();
 
@@ -269,11 +268,7 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   std::jthread output_thread{Workers::InterfaceWorker{
       nc, running, sess, key_cond, key_queue, key_queue_mtx}};
 
-  std::jthread input_thread{Workers::KeyWorker{
-      nc, key_cond, key_queue_mtx, key_queue, running, sess, delay}};
-
   pthread_setname_np(output_thread.native_handle(), "Display");
-  pthread_setname_np(input_thread.native_handle(), "Input");
 
   App::AppContext::AwaitShutdown();
   Tools::Log::Info(
@@ -282,11 +277,8 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
                       "no reason provided -- ungraceful shutdown")),
       "MAIN");
 
-  // running.clear();
-  input_thread.request_stop();
   output_thread.request_stop();
 
-  input_thread.join();
   output_thread.join();
 
   sess.end_session();
