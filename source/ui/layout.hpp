@@ -1,22 +1,16 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
-#include <cstddef>
-#include <functional>
-#include <initializer_list>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
-#include <tuple>
 #include <type_traits>
 #include <vector>
 
 #include <ncpp/Plane.hh>
 
-#include "core.hpp"
 #include "input.hpp"
-#include "tools/locked.hpp"
-#include "ui/widget.hpp"
+#include "locked.hpp"
 #include "views.hpp"
 
 namespace UI {
@@ -37,36 +31,44 @@ concept IsLeafNode =
 
 struct BlockList {
   std::vector<Block> elements;
-  // ThreadSafe::Locked<std::optional<Block &>> focused_element;
-  // std::atomic_int focused_element_idx = 0;
+
+  // This is fine unless we are changing the vec during usage
+  ThreadSafe::Locked<std::vector<Block>::iterator> focused_elem_it;
+
   Direction direction;
   std::shared_ptr<ncpp::Plane> parent;
+  Input::InputHandler input_handler;
   std::mutex m;
 
   void solve(std::shared_ptr<ncpp::Plane> = nullptr);
-  void render();
-  // void take_input(Input::KeyWithMod const &);
+  void render(bool const);
+  void take_input(Input::KeyWithMod const &);
+  void cycle_focus(UI::FocusDirection const);
 
   BlockList(Direction, std::vector<Block> &&);
 
   BlockList(BlockList &&) noexcept;
   BlockList &operator=(BlockList &&) noexcept;
+
+private:
+  void init_handler();
 };
 
 struct Block {
   std::variant<std::shared_ptr<UI::Views::View>, BlockList> element;
   Segments segments;
 
+  // (actually) TODO - Not all Blocks should be dynamically
+  // resizing. There should be a way to note a box which should have
+  // some set of fixed row/col sizes. For example, the event info
+  // might say it can be 4 rows if there's enough space, otherwise 1
+  // row. In that case the renderee will need to have some block state
+  // information...
+
   std::shared_ptr<ncpp::Plane> plane = nullptr;
 
   Block(Segments const, std::shared_ptr<UI::Views::View>);
   Block(Segments const, BlockList &&);
-
-  // Block(Block const &);
-  // Block &operator=(Block const &);
-
-  // Block(Block &&) noexcept;
-  // Block &operator=(Block &&) noexcept;
 };
 
 }; // namespace Layout

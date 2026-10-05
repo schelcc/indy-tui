@@ -1,4 +1,5 @@
 #include "ui/layout.hpp"
+#include "input.hpp"
 #include "widget.hpp"
 #include <memory>
 #include <mutex>
@@ -9,7 +10,30 @@
 namespace Layout {
 
 BlockList::BlockList(Direction d, std::vector<Block> &&blocks)
-    : elements(std::move(blocks)), direction(d) {}
+    : elements(std::move(blocks)), direction(d), input_handler() {
+  *focused_elem_it.get_mut() = elements.begin();
+  init_handler();
+}
+
+void BlockList::init_handler() {
+  // Setup input handler
+  using namespace Input;
+
+  if (direction == HORIZONTAL) {
+    input_handler
+        .register_callback(KeyWithMod('H', Modifier::SHIFT), "Cycle focus left",
+                           [this] { cycle_focus(UI::FocusDirection::PREV); })
+        .register_callback(KeyWithMod('L', Modifier::SHIFT),
+                           "Cycle focus right",
+                           [this] { cycle_focus(UI::FocusDirection::NEXT); });
+  } else {
+    input_handler
+        .register_callback(KeyWithMod('J', Modifier::SHIFT), "Cycle focus down",
+                           [this] { cycle_focus(UI::FocusDirection::NEXT); })
+        .register_callback(KeyWithMod('K', Modifier::SHIFT), "Cycle focus up",
+                           [this] { cycle_focus(UI::FocusDirection::PREV); });
+  }
+}
 
 BlockList::BlockList(BlockList &&other) noexcept {
   std::unique_lock lock(other.m);
@@ -17,6 +41,10 @@ BlockList::BlockList(BlockList &&other) noexcept {
   direction = other.direction;
   parent = other.parent;
   other.parent = nullptr;
+  // input_handler = std::move(other.input_handler);
+  *focused_elem_it.get_mut() = elements.begin();
+  input_handler = Input::InputHandler{};
+  init_handler();
 }
 
 BlockList &BlockList::operator=(BlockList &&other) noexcept {
@@ -25,13 +53,23 @@ BlockList &BlockList::operator=(BlockList &&other) noexcept {
   direction = other.direction;
   parent = other.parent;
   other.parent = nullptr;
+  // input_handler = std::move(other.input_handler);
+  *focused_elem_it.get_mut() = elements.begin();
+  input_handler = Input::InputHandler{};
+  init_handler();
   return *this;
 }
 
-Block::Block(Segments const s, std::shared_ptr<UI::Views::View> w)
-    : element(), segments(s) {
-  element = w;
+void BlockList::cycle_focus(UI::FocusDirection const d) {
+  auto it = focused_elem_it.get_mut();
+  if (d == UI::FocusDirection::NEXT)
+    *it = ((*it + 1) < elements.end()) ? (*it + 1) : (elements.begin());
+  else
+    *it = ((*it - 1) >= elements.begin()) ? (*it - 1) : (elements.end() - 1);
 }
+
+Block::Block(Segments const s, std::shared_ptr<UI::Views::View> w)
+    : element(w), segments(s) {}
 
 Block::Block(Segments const s, BlockList &&b)
     : element(std::move(b)), segments(s) {}
@@ -87,6 +125,9 @@ void BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
     y_off += (direction == VERTICAL) ? new_block_dim : 0;
 
     // Solve the children if the block is a blocklist
+    // Note: If the renderee needs to have some block state information, this
+    // might be a chance to pass it in, in which case this should be a visit.
+    // Case for async?
     if (std::holds_alternative<BlockList>(b.element)) {
       auto &l = std::get<BlockList>(b.element);
       l.solve((l.parent == nullptr) ? b.plane : nullptr);
@@ -94,7 +135,17 @@ void BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
   }
 }
 
-void BlockList::render() {
+void BlockList::render(bool const parent_focused) {
+  struct Vis {
+    Block &b;
+    bool focused;
+    void operator()(std::shared_ptr<UI::Views::View> &v) {
+      if (v->render_callback.has_value())
+        v->render_callback.value()(b.plane, focused);
+    }
+
+    void operator()(BlockList &l) { l.render(focused); }
+  };
   std::unique_lock lock(m);
 
   if (parent == nullptr)
@@ -104,14 +155,32 @@ void BlockList::render() {
   // pools? Have leaf blocks be able to dispatch to them? If we are
   // already gonna have the widgets hold on to render callbacks, can't
   // imagine it's too bad.
-  for (Block &b : elements) {
-    b.element.visit([&b](auto &e) {
-      if constexpr (IsLeafNode<decltype(e)>) {
-        if (e->render_callback.has_value())
-          std::invoke(e->render_callback.value(), b.plane);
-      } else
-        e.render();
-    });
+  auto focused_elem = focused_elem_it.get_const();
+  for (auto it = elements.begin(); it < elements.end(); it++) {
+    auto &b = *it;
+    bool this_elem_focused = parent_focused && (it == *focused_elem);
+
+    b.element.visit(Vis{b, this_elem_focused});
+  }
+}
+
+void BlockList::take_input(Input::KeyWithMod const &k) {
+  struct Vis {
+    Input::KeyWithMod const &k;
+    void operator()(std::shared_ptr<UI::Views::View> &v) { v->take_input(k); }
+    void operator()(BlockList &b) { b.take_input(k); }
+  };
+
+  if (input_handler.has_registered(k)) {
+    input_handler.handle_input(k);
+  }
+
+  else // if (focused_element_idx.get_const()->has_value())
+  {
+    (*(*focused_elem_it.get_mut())).element.visit(Vis{k});
+    // elements.at(focused_element_idx.get_const()->value_or(0) %
+    // elements.size())
+    //     .element.visit(Vis{k});
   }
 }
 
