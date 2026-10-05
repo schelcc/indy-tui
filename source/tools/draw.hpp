@@ -142,9 +142,10 @@ static inline void border(std::shared_ptr<ncpp::Plane> p,
   p->perimeter_rounded(ncpp::NCBox::CornerMask, chan, 0);
 }
 
-static inline void border_with_title(std::shared_ptr<ncpp::Plane> p,
-                                     std::string const &name) {
-  auto color = mask_pal_channels(p, Target::FG, PaletteColors::NONE);
+static inline void
+border_with_title(std::shared_ptr<ncpp::Plane> p, std::string const &name,
+                  PaletteColors const pal_color = PaletteColors::GRAY_HARD) {
+  auto color = mask_pal_channels(p, Target::FG, pal_color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, color, 0);
 
