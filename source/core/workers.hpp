@@ -18,6 +18,7 @@
 #include "core/session.hpp"
 #include "core/time.hpp"
 #include "input.hpp"
+#include "layout.hpp"
 #include "tools/strings.hpp"
 
 namespace Workers {
@@ -34,7 +35,7 @@ struct InterfaceWorker {
   /// @brief Maximum interface refresh rate. More than 10 Hz is likely a waste
   /// of resources, and any more than the source telemetry refresh rate is
   /// certainly a waste.
-  static constexpr Time::Duration::UIntMilliSec MAX_REDRAW_HZ =
+  static constexpr Time::Duration::UIntMilliSec MAX_REDRAW_PERIOD =
       Time::Duration::UIntMilliSec(100);
 
   void operator()(std::stop_token);
@@ -62,7 +63,8 @@ struct KeyWorker {
 
   std::atomic_flag &running;
   Core::Session &sess;
-  size_t &delay;
+
+  std::move_only_function<void(Input::KeyWithMod const &)> root_callback;
 
   static constexpr struct timespec INPUT_TIMEOUT{.tv_sec = 5, .tv_nsec = 0};
 

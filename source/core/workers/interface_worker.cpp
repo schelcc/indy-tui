@@ -3,7 +3,9 @@
 #include <memory>
 #include <ncpp/NCKey.hh>
 #include <notcurses/nckeys.h>
+#include <pthread.h>
 
+#include "app_context.hpp"
 #include "columns.hpp"
 #include "core.hpp"
 #include "core/workers.hpp"
@@ -12,6 +14,8 @@
 #include "draw.hpp"
 #include "input.hpp"
 #include "telemetry_board.hpp"
+#include "telemetry_frame.hpp"
+#include "telemetry_queue.hpp"
 #include "tools/logger.hpp"
 #include "ui/layout.hpp"
 #include "views.hpp"
@@ -95,21 +99,43 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     auto render_start = Time::Clock::now();
     auto block_until = render_start + MAX_REDRAW_HZ;
 
-    auto next_frame = sess.next_frame();
-    if (next_frame.has_value()) {
-      if (!board.inform_new_frame(std::move(next_frame.value())).has_value()) {
-        Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
-      }
-    }
+  // Interface worker spawns and manages input thread
+  std::jthread input_thread{
+      Workers::KeyWorker{nc, key_cond, key_queue_mtx, key_queue, running, sess,
+                         [f = std::move(root_input_callback)](
+                             Input::KeyWithMod const &k) mutable { f(k); }}};
 
-    root_layout.render();
+  pthread_setname_np(input_thread.native_handle(), "Input");
+
+  ncinput in{};
+  // bool skip_delay = false;
+
+  Time::TimePoint last_tick = Time::Clock::now();
+
+  while (!stop_tok.stop_requested()) {
+    auto render_start = Time::Clock::now();
+    auto block_until = render_start + MAX_REDRAW_PERIOD;
+
+    sess.next_frame()
+        .transform(
+            [&board](std::unique_ptr<Telemetry::TelemetryFrame> &&frame) {
+              return board.inform_new_frame(std::move(frame));
+            })
+        .transform_error([](Telemetry::TelemetryQueue::Err const &e) {
+          using Kind = Telemetry::TelemetryQueue::Err::Kind;
+          if ((e.kind != Kind::DELAY_FULL) && (e.kind != Kind::TOO_RECENT))
+            Tools::Log::Warn("Unhandled board-render failure", "MAIN-BOARD");
+          return e;
+        });
+
+    root_layout.render(true);
 
     nc.render();
 
     std_plane->erase();
 
-    ncinput in{};
-    if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Release)) {
+    if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Press)) {
+      // skip_delay = true;
       std::lock_guard lock(key_queue_mtx);
       key_queue.emplace(Input::KeyWithMod(in));
       key_cond.notify_one();
