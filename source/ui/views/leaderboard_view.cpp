@@ -51,7 +51,7 @@ void LeaderboardView::reconstruct_table(
 void LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
-    std::shared_ptr<ncpp::Plane> p) {
+    bool const focused, std::shared_ptr<ncpp::Plane> p) {
   // TODO - Figure out a better spot for this
   set_num_drivers(drivers->size());
 
@@ -82,7 +82,9 @@ void LeaderboardView::update_and_render(
 
   p->erase();
   locked_table->apply(p);
-  Tools::Draw::border_with_title(p, "Leaderboard");
+  Tools::Draw::border_with_title(p, "Leaderboard",
+                                 focused ? Tools::Draw::PaletteColors::CYAN_SOFT
+                                         : Tools::Draw::PaletteColors::NONE);
 }
 
 }; // namespace UI::Views

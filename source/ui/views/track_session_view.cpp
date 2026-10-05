@@ -26,6 +26,7 @@ TrackSessionView::TrackSessionView() : table() {
 }
 
 void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
+                                         bool const focused,
                                          std::shared_ptr<ncpp::Plane> p) {
 
   UI::String flag =
@@ -63,7 +64,9 @@ void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
         1, {"Time left", sess.time_to_go.get_const()->value_or("--:--:--")});
 
   table.apply(p);
-  Tools::Draw::border_with_title(p, "Event Status");
+  Tools::Draw::border_with_title(p, "Event Status",
+                                 focused ? Tools::Draw::PaletteColors::CYAN_SOFT
+                                         : Tools::Draw::PaletteColors::NONE);
 }
 
 }; // namespace UI::Views

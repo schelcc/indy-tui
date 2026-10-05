@@ -21,6 +21,7 @@ SessionStatusView::SessionStatusView() : table() {
 }
 
 void SessionStatusView::update_and_render(Core::Session const &sess,
+                                          bool const focused,
                                           std::shared_ptr<ncpp::Plane> p) {
   UI::String delay_s = "--";
   auto delay_res = sess.get_delay_sec();
@@ -56,7 +57,9 @@ void SessionStatusView::update_and_render(Core::Session const &sess,
   if (res.has_value())
     table.apply(p);
 
-  Tools::Draw::border_with_title(p, "Session Status");
+  Tools::Draw::border_with_title(p, "Session Status",
+                                 focused ? Tools::Draw::PaletteColors::CYAN_SOFT
+                                         : Tools::Draw::PaletteColors::NONE);
 }
 
 }; // namespace UI::Views

@@ -28,10 +28,10 @@ struct TrackSessionView {
   static constexpr size_t ROWS = 2;
   static constexpr size_t COLS = 3;
 
-  void update_and_render(Telemetry::TrackSession const &,
+  void update_and_render(Telemetry::TrackSession const &, bool const,
                          std::shared_ptr<ncpp::Plane>);
 
-  bool take_input([[maybe_unused]] Input::KeyWithMod &k) { return false; }
+  bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
   TrackSessionView();
 };
@@ -42,9 +42,10 @@ struct SessionStatusView {
   static constexpr size_t ROWS = 4;
   static constexpr size_t COLS = 2;
 
-  void update_and_render(Core::Session const &, std::shared_ptr<ncpp::Plane>);
+  void update_and_render(Core::Session const &, bool const,
+                         std::shared_ptr<ncpp::Plane>);
 
-  bool take_input([[maybe_unused]] Input::KeyWithMod &k) { return false; }
+  bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
   SessionStatusView();
 };
@@ -88,9 +89,9 @@ struct LeaderboardView {
 
   void update_and_render(
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
-      std::shared_ptr<ncpp::Plane>);
+      bool const, std::shared_ptr<ncpp::Plane>);
 
-  bool take_input([[maybe_unused]] Input::KeyWithMod &k) { return false; }
+  bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
   LeaderboardView();
 
@@ -110,15 +111,16 @@ struct View : public view_variant {
   using view_variant::variant;
   using view_variant::operator=;
 
-  std::optional<std::function<void(std::shared_ptr<ncpp::Plane>)>>
+  std::optional<std::function<void(std::shared_ptr<ncpp::Plane>, bool)>>
       render_callback = std::nullopt;
 
   template <typename F>
-    requires(
-        std::is_invocable_r_v<void, F, std::shared_ptr<ncpp::Plane>, View &>)
+    requires(std::is_invocable_r_v<void, F, std::shared_ptr<ncpp::Plane>, bool,
+                                   View &>)
   void set_render_callback(F &&f) {
-    render_callback = [this, f = std::move(f)](std::shared_ptr<ncpp::Plane> p) {
-      f(p, *this);
+    render_callback = [this, f = std::move(f)](std::shared_ptr<ncpp::Plane> p,
+                                               bool focused) {
+      f(p, focused, *this);
     };
   }
 
@@ -132,6 +134,10 @@ struct View : public view_variant {
     requires(Core::VariantHasAlternative<T, view_variant>)
   bool is() {
     return std::holds_alternative<T>(*this);
+  }
+
+  void take_input(Input::KeyWithMod const &k) {
+    this->visit([k](auto &v) { v.take_input(k); });
   }
 
   template <typename T, typename... Args>
