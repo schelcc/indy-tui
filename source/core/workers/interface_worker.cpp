@@ -14,6 +14,7 @@
 #include "core/time.hpp"
 #include "draw.hpp"
 #include "input.hpp"
+#include "perf.hpp"
 #include "telemetry_board.hpp"
 #include "telemetry_frame.hpp"
 #include "telemetry_queue.hpp"
@@ -76,21 +77,8 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     return output;
   };
 
-  // Build rows
-  // auto info_row =
-  //     make_row(Block(1, event_status_view), Block(1, sess_status_view));
-
   auto info_row = BlockList(HORIZONTAL, make_row(Block(1, event_status_view),
                                                  Block(1, sess_status_view)));
-
-  // BlockList root_layout(
-  //     VERTICAL,
-  //     make_row(
-  //         Block(1, BlockList(HORIZONTAL, make_row(Block(1,
-  //         event_status_view),
-  //                                                 Block(1,
-  //                                                 sess_status_view)))),
-  //         Block(1, leaderboard_view)));
 
   BlockList root_layout(VERTICAL, make_row(Block(1, std::move(info_row)),
                                            Block(1, leaderboard_view)));
@@ -100,7 +88,14 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   leaderboard_view->as<UI::Views::LeaderboardView>().set_columns(
       {{Columns::Rank, "Rank"},
        {Columns::PitStatus<SessionType::PRACTICE>, " ", UI::Align::RIGHT},
-       {Columns::DriverName<SessionType::PRACTICE>, "Name", UI::Align::LEFT}});
+       {Columns::DriverName<SessionType::PRACTICE>, "Name", UI::Align::LEFT},
+       {Columns::Interval, "Interval"},
+       {Columns::Gap, "Gap"},
+       {Columns::Throttle, "Throttle %"},
+       {Columns::Brake, "Brake %"},
+       {Columns::LapsSincePit, "Since Pit"},
+       {Columns::Speed, "Speed"},
+       {Columns::LapDist, "Lap Distance"}});
 
   uint pre_dim_x = 0;
   uint pre_dim_y = 0;
@@ -163,9 +158,18 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
   Time::TimePoint last_tick = Time::Clock::now();
 
+  size_t cnt = 0;
+
+  App::PerfContext::Get();
+
   while (!stop_tok.stop_requested()) {
     auto render_start = Time::Clock::now();
     auto block_until = render_start + MAX_REDRAW_PERIOD;
+
+    if ((cnt++ % 50) == 0) {
+      App::PerfContext::LogKeyHandleTime();
+      App::PerfContext::LogLeaderboardPopulationTime();
+    }
 
     sess.next_frame()
         .transform(

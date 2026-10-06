@@ -3,6 +3,7 @@
 #include "core.hpp"
 #include "locked.hpp"
 #include "logger.hpp"
+#include "perf.hpp"
 #include "time.hpp"
 #include <algorithm>
 #include <cstddef>
@@ -140,11 +141,7 @@ struct InputHandler {
       return;
 
     callback->second.visit(Vis{});
-    Time::Duration::DblMilliSec handle_delay =
-        Time::Clock::now() - k.event_time;
-    Tools::Log::Debug(std::format("Input '{}' handled in {:.3f}ns", char(k.key),
-                                  handle_delay.count() * 1000),
-                      "INPUT-TIMING");
+    App::PerfContext::RecKeyHandleTime(Time::Clock::now() - k.event_time);
   }
 
   [[nodiscard]] bool has_registered(ncinput const &ni) const {

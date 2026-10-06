@@ -1,6 +1,7 @@
 #include "draw.hpp"
 #include "driver_telemetry.hpp"
 #include "logger.hpp"
+#include "perf.hpp"
 #include "ui/views.hpp"
 #include "widget.hpp"
 #include <ranges>
@@ -71,6 +72,8 @@ void LeaderboardView::update_and_render(
   assert(dim.rows == *_num_drivers.get_const());
   assert(dim.rows == drivers->size());
 
+  App::PerfContext::StartLeaderboardPopulationTime();
+
   for (auto const &[idx, col] : std::views::enumerate(*_cols.get_const())) {
     auto _ = locked_table->update_col(
         idx, *drivers | std::views::transform(col) | std::views::as_rvalue |
@@ -79,6 +82,8 @@ void LeaderboardView::update_and_render(
     if (!_.has_value())
       Tools::Log::Warn("Failed to render columns");
   }
+
+  App::PerfContext::StopLeaderboardPopulationTime();
 
   p->erase();
   locked_table->apply(p);
