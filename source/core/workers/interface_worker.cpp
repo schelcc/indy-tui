@@ -107,6 +107,9 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
   std_plane->get_dim(&pre_dim_y, &pre_dim_x);
 
+  std::mutex render_cv_mtx;
+  std::condition_variable_any render_cv;
+
   // Move this somewhere else later
   using Input::KeyWithMod;
   using Input::Modifier;
@@ -127,16 +130,25 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
       .duplicate_callback(KeyWithMod('q', Modifier::NONE),
                           KeyWithMod('C', Modifier::CTRL));
 
-  auto root_input_callback = [&root_layout, handler = std::move(root_handler)](
-                                 Input::KeyWithMod const &k) mutable {
-    // Primary input callback. Invoked in other thread, so must be
-    // mindful of thread safety. Should first handle global input,
-    // then pass to root_layout for contextual input.
-    if (handler.has_registered(k))
-      handler.handle_input(k);
-    else
-      root_layout.take_input(k);
-  };
+  auto root_input_callback =
+      [&root_layout, &render_cv, &render_cv_mtx,
+       handler = std::move(root_handler)](Input::KeyWithMod const &k) mutable {
+        // Primary input callback. Invoked in other thread, so must be
+        // mindful of thread safety. Should first handle global input,
+        // then pass to root_layout for contextual input.
+        bool handled = handler.has_registered(k);
+
+        if (handled)
+          handler.handle_input(k);
+        else
+          handled = root_layout.take_input(k);
+
+        if (handled) {
+          Tools::Log::Debug("Triggering early render", "ROOT-INPUT");
+          std::lock_guard lock(render_cv_mtx);
+          render_cv.notify_all();
+        }
+      };
 
   // Interface worker spawns and manages input thread
   std::jthread input_thread{
@@ -167,12 +179,6 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
           return e;
         });
 
-    root_layout.render(true);
-
-    nc.render();
-
-    std_plane->erase();
-
     if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Press)) {
       // skip_delay = true;
       std::lock_guard lock(key_queue_mtx);
@@ -191,9 +197,16 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     //   std::this_thread::sleep_until(block_until);
 
     // if (!skip_delay)
-    std::this_thread::sleep_until(block_until);
+    // std::this_thread::sleep_until(block_until);
 
-    // skip_delay = false;
+    std::unique_lock lock(render_cv_mtx);
+    render_cv.wait_until(lock, block_until);
+
+    root_layout.render(true);
+
+    std_plane->erase();
+
+    nc.render();
 
     std_plane->get_dim(&pre_dim_y, &pre_dim_x);
 

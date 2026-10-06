@@ -164,20 +164,23 @@ void BlockList::render(bool const parent_focused) {
   }
 }
 
-void BlockList::take_input(Input::KeyWithMod const &k) {
+bool BlockList::take_input(Input::KeyWithMod const &k) {
   struct Vis {
     Input::KeyWithMod const &k;
-    void operator()(std::shared_ptr<UI::Views::View> &v) { v->take_input(k); }
-    void operator()(BlockList &b) { b.take_input(k); }
+    bool operator()(std::shared_ptr<UI::Views::View> &v) {
+      return v->take_input(k);
+    }
+    bool operator()(BlockList &b) { return b.take_input(k); }
   };
 
   if (input_handler.has_registered(k)) {
     input_handler.handle_input(k);
+    return true;
   }
 
   else // if (focused_element_idx.get_const()->has_value())
   {
-    (*(*focused_elem_it.get_mut())).element.visit(Vis{k});
+    return (*(*focused_elem_it.get_mut())).element.visit(Vis{k});
     // elements.at(focused_element_idx.get_const()->value_or(0) %
     // elements.size())
     //     .element.visit(Vis{k});

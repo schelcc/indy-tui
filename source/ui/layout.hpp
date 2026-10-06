@@ -42,7 +42,7 @@ struct BlockList {
 
   void solve(std::shared_ptr<ncpp::Plane> = nullptr);
   void render(bool const);
-  void take_input(Input::KeyWithMod const &);
+  bool take_input(Input::KeyWithMod const &);
   void cycle_focus(UI::FocusDirection const);
 
   BlockList(Direction, std::vector<Block> &&);

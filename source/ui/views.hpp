@@ -136,8 +136,8 @@ struct View : public view_variant {
     return std::holds_alternative<T>(*this);
   }
 
-  void take_input(Input::KeyWithMod const &k) {
-    this->visit([k](auto &v) { v.take_input(k); });
+  bool take_input(Input::KeyWithMod const &k) {
+    return this->visit([k](auto &v) { return v.take_input(k); });
   }
 
   template <typename T, typename... Args>
