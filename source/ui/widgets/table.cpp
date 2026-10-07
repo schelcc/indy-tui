@@ -9,17 +9,20 @@
 #include <stdexcept>
 
 #include "locked.hpp"
+#include "perf.hpp"
 #include "ui/string.hpp"
 #include "ui/widget.hpp"
 
 namespace UI {
 
 void Table::Column::recalculate_width(UI::String const &default_str) {
-  max_width = std::ranges::max(
-      rows |
-      std::views::transform([&default_str](std::optional<UI::String> const &s) {
-        return s.value_or(default_str).size();
-      }));
+
+  max_width = default_str.size();
+
+  for (std::optional<UI::String> const &s : rows) {
+    max_width =
+        s.has_value() ? std::max(max_width, s.value().size()) : max_width;
+  }
 }
 
 Table::Dim Table::get_dim() const noexcept {
@@ -121,7 +124,9 @@ Table::update_col(size_t const col,
     return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
+
   _table.at(col).rows = std::move(new_col);
+
   _table.at(col).recalculate_width(empty_cell);
 
   return {};
