@@ -23,17 +23,14 @@ concept IsNot = !std::is_same_v<T, S>;
 namespace UI {
 
 struct String {
+private:
+  size_t size_ = 0;
+
+public:
   std::vector<std::tuple<std::variant<std::string, std::wstring>, Color, Style>>
       str{};
 
-  [[nodiscard]] size_t size() const noexcept {
-    return std::accumulate(
-        std::cbegin(str), std::cend(str), 0,
-        [](size_t &&a, auto const &s) -> size_t {
-          return a +
-                 std::visit([](auto _s) { return _s.size(); }, std::get<0>(s));
-        });
-  }
+  [[nodiscard]] size_t size() const noexcept { return size_; }
 
   template <typename S>
     requires requires(S s) { String(s); }
@@ -44,8 +41,10 @@ struct String {
                    std::make_move_iterator(std::end(s.str)));
       else
         str.insert(std::end(str), std::begin(s.str), std::end(s.str));
+      size_ += s.size_;
     } else {
       str.emplace_back(std::forward<S>(s), Color::NONE, Style::NORMAL);
+      size_ += s.size();
     }
     return *this;
   }
@@ -120,22 +119,25 @@ struct String {
         });
   }
 
-  String(Core::IsOneOf<std::string, std::wstring> auto const &str,
+  String(Core::IsOneOf<std::string, std::wstring> auto const &_str,
          Color const color = Color::NONE, Style const style = Style::NORMAL)
-      : str({{std::variant<std::string, std::wstring>{
-                  std::in_place_type_t<std::remove_cvref_t<decltype(str)>>(),
-                  str},
+      : size_(_str.size()),
+        str({{std::variant<std::string, std::wstring>{
+                  std::in_place_type_t<std::remove_cvref_t<decltype(_str)>>(),
+                  _str},
               color, style}}) {};
 
-  String(std::string_view const str, Color const color = Color::NONE,
+  String(std::string_view const _str, Color const color = Color::NONE,
          Style const style = Style::NORMAL)
-      : str({{std::variant<std::string, std::wstring>{
-                  std::in_place_type_t<std::string>(), str.data()},
+      : size_(_str.size()),
+        str({{std::variant<std::string, std::wstring>{
+                  std::in_place_type_t<std::string>(), _str.data()},
               color, style}}) {};
 
   String(std::wstring_view const str, Color const color = Color::NONE,
          Style const style = Style::NORMAL)
-      : str({{std::variant<std::string, std::wstring>{
+      : size_(str.size()),
+        str({{std::variant<std::string, std::wstring>{
                   std::in_place_type_t<std::wstring>(), str.data()},
               color, style}}) {};
 
@@ -144,7 +146,10 @@ struct String {
     requires std::is_convertible_v<S, std::string>
   String(S &&s, Color const color = Color::NONE,
          Style const style = Style::NORMAL)
-      : str({{std::string(std::move(s)), color, style}}){};
+      : str({{std::string(std::move(s)), color, style}}) {
+    size_ =
+        std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
+  };
 
   // For anything not string convertible but wstring convertible
   template <typename S>
@@ -152,7 +157,10 @@ struct String {
              std::is_convertible_v<S, std::wstring>)
   String(S &&s, Color const color = Color::NONE,
          Style const style = Style::NORMAL)
-      : str({{std::wstring(std::move(s)), color, style}}){};
+      : str({{std::wstring(std::move(s)), color, style}}) {
+    size_ =
+        std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
+  };
 
   // Stream operator fallback for everything else
   template <typename S>
@@ -161,18 +169,23 @@ struct String {
              requires(S s) { std::stringstream() << s; })
   String(S &&s, Color const color = Color::NONE,
          Style const style = Style::NORMAL)
-      : str({{(std::stringstream() << std::move(s)).str(), color, style}}){};
+      : str({{(std::stringstream() << std::move(s)).str(), color, style}}) {
+    size_ =
+        std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
+  };
 
   String() = default;
 
   String &operator+=(String const &other) noexcept {
     str.insert(std::end(str), std::begin(other.str), std::end(other.str));
+    size_ += other.size_;
     return *this;
   }
 
   String &operator+=(String &&other) noexcept {
     str.insert(std::end(str), std::make_move_iterator(std::begin(other.str)),
                std::make_move_iterator(std::end(other.str)));
+    size_ += other.size_;
     return *this;
   }
 
@@ -180,6 +193,7 @@ struct String {
     requires(!std::is_same_v<std::remove_cvref_t<S>, String>) &&
             requires(S s) { String(s); }
   String &operator+=(S &&other) noexcept {
+    size_ += other.size_;
     return this->append(std::forward<S>(other));
   }
 };
