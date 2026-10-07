@@ -1,9 +1,13 @@
 #include "draw.hpp"
 #include "driver_telemetry.hpp"
+#include "locked.hpp"
 #include "logger.hpp"
 #include "perf.hpp"
 #include "ui/views.hpp"
 #include "widget.hpp"
+#include <execution>
+#include <future>
+#include <iterator>
 #include <ranges>
 
 using ThreadSafe::LockPair;
@@ -49,6 +53,14 @@ void LeaderboardView::reconstruct_table(
     locked_table->column_props(idx)->align = c.align;
 }
 
+// Callback for async column-function application
+std::vector<std::optional<UI::String>>
+apply_column(LeaderboardView::ColumnInfo const &c,
+             std::vector<Telemetry::DriverTelemetry> const &d) {
+  return d | std::views::transform(c) |
+         std::ranges::to<std::vector<std::optional<UI::String>>>();
+}
+
 void LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
@@ -72,15 +84,32 @@ void LeaderboardView::update_and_render(
   assert(dim.rows == *_num_drivers.get_const());
   assert(dim.rows == drivers->size());
 
+  using OptStr = std::optional<UI::String>;
+  using ColStrPair = std::pair<size_t, std::future<std::vector<OptStr>>>;
+
   App::PerfContext::StartLeaderboardPopulationTime();
 
-  for (auto const &[idx, col] : std::views::enumerate(*_cols.get_const())) {
-    auto _ = locked_table->update_col(
-        idx, *drivers | std::views::transform(col) | std::views::as_rvalue |
-                 std::ranges::to<std::vector<std::optional<UI::String>>>());
+  // Create vec of pairs of position and async results
+  std::vector<ColStrPair> col_strs{};
+  col_strs.reserve(drivers->size() + 1);
 
-    if (!_.has_value())
-      Tools::Log::Warn("Failed to render columns");
+  auto cols = _cols.get_const();
+
+  // For each column, add to col_strs an async call which applies the col func
+  // to the drivers vec
+  size_t pos = 0;
+  std::transform(
+      std::begin(*cols), std::end(*cols), std::back_inserter(col_strs),
+      [&drivers, &pos](ColumnInfo const &col_func) {
+        return std::make_tuple(
+            pos++, std::async(apply_column, col_func, std::cref(*drivers)));
+      });
+
+  // Retrieve the value from the generated futures and populate the table
+  // accordingly
+  for (auto &[pos, val] : col_strs) {
+    [[maybe_unused]] auto res =
+        locked_table->update_col(pos, std::move(val).get());
   }
 
   App::PerfContext::StopLeaderboardPopulationTime();
