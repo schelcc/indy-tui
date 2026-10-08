@@ -119,6 +119,7 @@ public:
   PERF_ASPECT_SS(KeyHandleTime);
 
   PERF_ASPECT_G2G(LeaderboardPopulationTime);
+  PERF_ASPECT_G2G(RenderTime);
 
   PerfContext() = default;
   ~PerfContext() = default;

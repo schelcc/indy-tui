@@ -156,12 +156,8 @@ void BlockList::render(bool const parent_focused) {
   // already gonna have the widgets hold on to render callbacks, can't
   // imagine it's too bad.
   auto focused_elem = focused_elem_it.get_const();
-  for (auto it = elements.begin(); it < elements.end(); it++) {
-    auto &b = *it;
-    bool this_elem_focused = parent_focused && (it == *focused_elem);
-
-    b.element.visit(Vis{b, this_elem_focused});
-  }
+  for (auto it = elements.begin(); it < elements.end(); it++)
+    it->element.visit(Vis{*it, (parent_focused && (it == *focused_elem))});
 }
 
 bool BlockList::take_input(Input::KeyWithMod const &k) {
