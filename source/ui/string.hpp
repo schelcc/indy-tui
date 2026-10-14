@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <numeric>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -26,8 +29,29 @@ struct String {
 private:
   size_t size_ = 0;
 
+  struct StyleSet {
+    uint16_t style = 0;
+
+    [[nodiscard]] bool has_style(UI::Style s) const {
+      return static_cast<uint16_t>(style) & static_cast<uint16_t>(s);
+    }
+
+    void clear_style() { style = 0; }
+
+    void clear_style(UI::Style s) { style &= (~static_cast<uint16_t>(s)); }
+
+    void set_style(UI::Style s) { style |= (static_cast<uint16_t>(s)); }
+
+    template <typename... Ts>
+      requires(Core::IsOneOf<Ts, UI::Style> && ...)
+    StyleSet(Ts... cs) : style((static_cast<uint16_t>(cs) | ...)) {}
+
+    StyleSet() : style(static_cast<uint16_t>(UI::Style::NORMAL)) {};
+  };
+
 public:
-  std::vector<std::tuple<std::variant<std::string, std::wstring>, Color, Style>>
+  std::vector<
+      std::tuple<std::variant<std::string, std::wstring>, Color, StyleSet>>
       str{};
 
   [[nodiscard]] size_t size() const noexcept { return size_; }
@@ -58,10 +82,10 @@ public:
     std::for_each(
         std::cbegin(str), std::cend(str),
         [&](std::tuple<std::variant<std::string, std::wstring>, Color,
-                       Style> const &str_tuple) {
+                       StyleSet> const &str_tuple) {
           auto const &str = std::get<0>(str_tuple);
           Color const &color = std::get<1>(str_tuple);
-          Style const &style = std::get<2>(str_tuple);
+          StyleSet const &style = std::get<2>(str_tuple);
 
           std::visit(
               [&](auto const &s) {
@@ -74,9 +98,10 @@ public:
                   p->stain(row, cur_col, ylen, xlen, chan, chan, chan, chan);
                 }
 
-                if (style != Style::NORMAL) {
-                  p->format(row, cur_col, ylen, xlen,
-                            static_cast<std::underlying_type_t<Style>>(style));
+                if (style.style != static_cast<uint16_t>(Style::NORMAL)) {
+                  p->format(
+                      row, cur_col, ylen, xlen,
+                      static_cast<std::underlying_type_t<Style>>(style.style));
                 }
 
                 cur_col += xlen;
@@ -92,10 +117,10 @@ public:
     std::for_each(
         std::cbegin(str), std::cend(str),
         [&](std::tuple<std::variant<std::string, std::wstring>, Color,
-                       Style> const &str_tuple) {
+                       StyleSet> const &str_tuple) {
           auto const &str = std::get<0>(str_tuple);
           Color const &color = std::get<1>(str_tuple);
-          Style const &style = std::get<2>(str_tuple);
+          StyleSet const &style = std::get<2>(str_tuple);
 
           std::visit(
               [&](auto const &s) {
@@ -108,9 +133,10 @@ public:
                   p->stain(row, cur_col, ylen, xlen, chan, chan, chan, chan);
                 }
 
-                if (style != Style::NORMAL) {
-                  p->format(row, cur_col, ylen, xlen,
-                            static_cast<std::underlying_type_t<Style>>(style));
+                if (style.style != static_cast<uint16_t>(Style::NORMAL)) {
+                  p->format(
+                      row, cur_col, ylen, xlen,
+                      static_cast<std::underlying_type_t<Style>>(style.style));
                 }
 
                 cur_col += xlen;
@@ -119,45 +145,39 @@ public:
         });
   }
 
-  String(Core::IsOneOf<std::string, std::wstring> auto const &_str,
-         Color const color = Color::NONE, Style const style = Style::NORMAL)
-      : size_(_str.size()),
-        str({{std::variant<std::string, std::wstring>{
-                  std::in_place_type_t<std::remove_cvref_t<decltype(_str)>>(),
-                  _str},
-              color, style}}) {};
+  template <Core::IsOneOf<std::string, std::wstring> S>
+  String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
+      : size_(s.size()),
+        str({{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
+                                                      std::forward<S>(s)),
+              color, StyleSet(stys...)}}) {}
 
-  String(std::string_view const _str, Color const color = Color::NONE,
-         Style const style = Style::NORMAL)
-      : size_(_str.size()),
-        str({{std::variant<std::string, std::wstring>{
-                  std::in_place_type_t<std::string>(), _str.data()},
-              color, style}}) {};
+  template <Core::IsOneOf<std::string, std::wstring> S>
+  String(S &&s, Color const color = UI::Color::NONE)
+      : size_(s.size()),
+        str({{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
+                                                      std::forward<S>(s)),
+              color, StyleSet()}}) {}
 
-  String(std::wstring_view const str, Color const color = Color::NONE,
-         Style const style = Style::NORMAL)
-      : size_(str.size()),
-        str({{std::variant<std::string, std::wstring>{
-                  std::in_place_type_t<std::wstring>(), str.data()},
-              color, style}}) {};
+  // Conditionally pick corresponding string type for a given string view
+  template <typename SV, typename S = std::conditional_t<
+                             std::is_same_v<SV, std::string_view>, std::string,
+                             std::wstring>>
+    requires(Core::IsOneOf<SV, std::string_view, std::wstring_view>)
+  String(SV const &s, Color const color = Color::NONE,
+         Core::IsOneOf<Style> auto... stys)
+      : String(S(s), color, stys...) {}
 
-  // For anything string convertible
-  template <typename S>
-    requires std::is_convertible_v<S, std::string>
-  String(S &&s, Color const color = Color::NONE,
-         Style const style = Style::NORMAL)
-      : str({{std::string(std::move(s)), color, style}}) {
-    size_ =
-        std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
-  };
-
-  // For anything not string convertible but wstring convertible
-  template <typename S>
-    requires(!std::is_convertible_v<S, std::string> &&
-             std::is_convertible_v<S, std::wstring>)
-  String(S &&s, Color const color = Color::NONE,
-         Style const style = Style::NORMAL)
-      : str({{std::wstring(std::move(s)), color, style}}) {
+  // For anything string or wstring convertible
+  template <typename S1, typename S2 = std::conditional_t<
+                             std::is_convertible_v<S1, std::string>,
+                             std::string, std::wstring>>
+    requires((std::is_convertible_v<S1, std::string> ||
+              std::is_convertible_v<S1, std::wstring>) &&
+             !Core::IsOneOf<S1, std::string, std::wstring>)
+  String(S1 &&s, Color const color = Color::NONE,
+         Core::IsOneOf<Style> auto... stys)
+      : String(S2(std::forward<S1>(s)), color, stys...) {
     size_ =
         std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
   };
@@ -168,8 +188,9 @@ public:
               !std::is_convertible_v<S, std::wstring>) &&
              requires(S s) { std::stringstream() << s; })
   String(S &&s, Color const color = Color::NONE,
-         Style const style = Style::NORMAL)
-      : str({{(std::stringstream() << std::move(s)).str(), color, style}}) {
+         Core::IsOneOf<Style> auto... stys)
+      : String((std::stringstream() << std::forward<S>(s)).str(), color,
+               stys...) {
     size_ =
         std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
   };
