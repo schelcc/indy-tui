@@ -18,6 +18,8 @@
 #include <ncpp/Plane.hh>
 
 #include "core/core.hpp"
+
+#include "ui/types.hpp"
 #include "ui/ui.hpp"
 
 template <typename T, typename S>
@@ -110,7 +112,7 @@ public:
         });
   }
   void apply_to_plane(std::shared_ptr<ncpp::Plane> p, size_t const row,
-                      size_t const col) const {
+                      size_t const col, size_t const padding_to = 0) const {
 
     size_t cur_col = col;
 
@@ -143,6 +145,11 @@ public:
               },
               str);
         });
+
+    for (; cur_col < padding_to; ++cur_col)
+      p->putc(row, cur_col, ' ');
+    // if (cur_col < padding_to)
+    //   p->putstr(row, cur_col + 1, std::string
   }
 
   template <Core::IsOneOf<std::string, std::wstring> S>
@@ -212,9 +219,11 @@ public:
 
   template <typename S>
     requires(!std::is_same_v<std::remove_cvref_t<S>, String>) &&
-            requires(S s) { String(s); }
+            requires(S s) { String(s); } && requires(S s) {
+              { s.size() } -> std::same_as<size_t>;
+            }
   String &operator+=(S &&other) noexcept {
-    size_ += other.size_;
+    size_ += other.size();
     return this->append(std::forward<S>(other));
   }
 };

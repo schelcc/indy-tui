@@ -2,6 +2,7 @@
 #include "core.hpp"
 #include "tools/numeric.hpp"
 #include "ui/layout.hpp"
+#include "ui/types.hpp"
 #include <cassert>
 #include <cmath>
 #include <memory>
@@ -71,26 +72,6 @@ static inline std::wstring prog_bar(double pct, size_t chars,
   return bar;
 }
 
-enum class PaletteColors {
-  BLACK_HARD = 0,
-  RED_HARD = 1,
-  GREEN_HARD = 2,
-  YELLOW_HARD = 3,
-  BLUE_HARD = 4,
-  PURPLE_HARD = 5,
-  CYAN_HARD = 6,
-  GRAY_HARD = 7,
-  BLACK_SOFT = 8,
-  RED_SOFT = 9,
-  GREEN_SOFT = 10,
-  YELLOW_SOFT = 11,
-  BLUE_SOFT = 12,
-  PURPLE_SOFT = 13,
-  CYAN_SOFT = 14,
-  GRAY_SOFT = 15,
-  NONE = 16,
-};
-
 enum class Target {
   FG,
   BG,
@@ -98,10 +79,10 @@ enum class Target {
 
 static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
                                          Target const target,
-                                         PaletteColors const color) {
+                                         UI::Color const color) {
   uint64_t chan = p->get_channels();
 
-  if (color == PaletteColors::NONE)
+  if (color == UI::Color::NONE)
     return chan;
 
   ncpp::Palette pal{};
@@ -122,7 +103,7 @@ static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
 
 static inline void set_row_color(std::shared_ptr<ncpp::Plane> p,
                                  size_t const row, Target const target,
-                                 PaletteColors const color) {
+                                 UI::Color const color) {
   uint64_t chan = mask_pal_channels(p, target, color);
 
   p->stain(row, 1, 1, p->get_dim_x() - 2, chan, chan, chan, chan);
@@ -136,7 +117,7 @@ static inline std::string trunc_str(std::string_view const s,
 }
 
 static inline void border(std::shared_ptr<ncpp::Plane> p,
-                          PaletteColors color = PaletteColors::NONE) {
+                          UI::Color color = UI::Color::NONE) {
   auto chan = mask_pal_channels(p, Target::FG, color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, chan, 0);
@@ -144,7 +125,7 @@ static inline void border(std::shared_ptr<ncpp::Plane> p,
 
 static inline void
 border_with_title(std::shared_ptr<ncpp::Plane> p, std::string const &name,
-                  PaletteColors const pal_color = PaletteColors::GRAY_HARD) {
+                  UI::Color const pal_color = UI::Color::GRAY_HARD) {
   auto color = mask_pal_channels(p, Target::FG, pal_color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, color, 0);
