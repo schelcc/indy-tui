@@ -82,7 +82,15 @@ struct LeaderboardView {
     }
   };
 
+  struct RowHighlight {
+    size_t idx;
+    UI::Color color;
+  };
+
   ThreadSafe::Locked<UI::Table> table;
+  ThreadSafe::Locked<std::vector<RowHighlight>> highlight_rows{};
+  std::atomic<size_t> table_cursor = 0;
+  Input::InputHandler handler{};
 
   void set_columns(std::vector<ColumnInfo> &&);
   void set_num_drivers(size_t const);
@@ -91,7 +99,7 @@ struct LeaderboardView {
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
       bool const, std::shared_ptr<ncpp::Plane>);
 
-  bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
+  bool take_input(Input::KeyWithMod const &);
 
   LeaderboardView();
 

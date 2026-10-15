@@ -7,9 +7,11 @@
 
 #include <ncpp/Plane.hh>
 #include <stdexcept>
+#include <type_traits>
 
 #include "locked.hpp"
 #include "perf.hpp"
+#include "ui.hpp"
 #include "ui/string.hpp"
 #include "ui/widget.hpp"
 
@@ -175,24 +177,60 @@ void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   std::shared_lock lock(_mtx);
 
   size_t col_pos = 1;
+  size_t idx = 0;
   for (auto const &col : _table) {
     size_t row_offset = 1;
 
+    size_t padding_to_col =
+        col_pos + col.max_width +
+        ((idx++ == (_table.size() - 1)) ? 0ul : column_sep.load());
+
     for (auto const &row : col.rows) {
-      if (col.props.align == Align::LEFT) {
-        row.value_or(empty_cell).apply_to_plane(p, row_offset, col_pos);
-      } else {
-        auto row_s = row.value_or(empty_cell);
-        row_s.apply_to_plane(p, row_offset,
-                             col_pos +
-                                 ((col.props.align == Align::RIGHT)
-                                      ? col.max_width - row_s.size()
-                                      : (col.max_width - row_s.size()) / 2));
-      }
+      auto row_s = row.value_or(empty_cell);
+
+      size_t x = (col.props.align == Align::LEFT)
+                     ? col_pos
+                     : (col_pos + ((col.props.align == Align::RIGHT)
+                                       ? (col.max_width - row_s.size())
+                                       : ((col.max_width - row_s.size()) / 2)));
+
+      // row_s += (row_s.size() < col.max_width)
+      //              ? std::string('x', col.max_width - row_s.size())
+      //              : "";
+
+      row_s.apply_to_plane(p, row_offset, x, padding_to_col);
+
+      // if (row_s.size() < col.max_width)
+      //   p->putstr(row_offset, x + 1,
+      //             std::string(' ', col.max_width - row_s.size()).data());
+
+      // if (col.props.align == Align::LEFT) {
+      //   row.value_or(empty_cell).apply_to_plane(p, row_offset, col_pos);
+      // } else {
+      //   auto row_s = row.value_or(empty_cell);
+      //   row_s.apply_to_plane(p, row_offset,
+      //                        col_pos +
+      //                            ((col.props.align == Align::RIGHT)
+      //                                 ? col.max_width - row_s.size()
+      //                                 : (col.max_width - row_s.size()) / 2));
+      // }
       row_offset++;
     }
     col_pos += (col.max_width + column_sep);
   }
+
+  // for (auto const &[row, color, style] : _row_mods) {
+  //   auto xlen = p->get_dim_x();
+
+  //   if (color != Color::NONE) {
+  //     auto chan = MakeChannels(p, color);
+  //     p->stain(row, 0, 1, xlen, chan, chan, chan, chan);
+  //   }
+
+  //   if (style != Style::NORMAL)
+  //     p->format(row, 0, 1, xlen,
+  //               static_cast<std::underlying_type_t<UI::Style>>(style));
+  // }
 }
 
 void Table::clear() noexcept {
@@ -202,4 +240,34 @@ void Table::clear() noexcept {
       d.cols,
       Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
 }
+
+// std::expected<void, WidgetErr>
+// Table::set_row_mod(size_t const row, UI::Style style, UI::Color color) {
+//   if (row >= get_dim().rows)
+//     return WidgetErr(WidgetErr::OUT_OF_RANGE);
+
+//   std::unique_lock lock(_mtx);
+
+//   auto row_it = std::ranges::find_if(
+//       _row_mods, [row](RowMods const &m) { return m.index == row; });
+//   if (row_it != _row_mods.end())
+//     *row_it = RowMods{row, color, style};
+//   else
+//     _row_mods.emplace_back(row, color, style);
+
+//   return {};
+// }
+
+// std::expected<void, WidgetErr> Table::clear_row_mod(size_t const row) {
+//   if (row >= get_dim().rows)
+//     return WidgetErr(WidgetErr::OUT_OF_RANGE);
+
+//   std::unique_lock lock(_mtx);
+
+//   auto [start, end] = std::ranges::remove_if(
+//       _row_mods, [row](RowMods const &m) { return m.index == row; });
+//   _row_mods.erase(start, end);
+//   return {};
+// }
+
 }; // namespace UI

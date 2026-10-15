@@ -64,9 +64,8 @@ void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
         1, {"Time left", sess.time_to_go.get_const()->value_or("--:--:--")});
 
   table.apply(p);
-  Tools::Draw::border_with_title(p, "Event Status",
-                                 focused ? Tools::Draw::PaletteColors::CYAN_SOFT
-                                         : Tools::Draw::PaletteColors::NONE);
+  Tools::Draw::border_with_title(
+      p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 }
 
 }; // namespace UI::Views

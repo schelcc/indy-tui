@@ -57,9 +57,8 @@ void SessionStatusView::update_and_render(Core::Session const &sess,
   if (res.has_value())
     table.apply(p);
 
-  Tools::Draw::border_with_title(p, "Session Status",
-                                 focused ? Tools::Draw::PaletteColors::CYAN_SOFT
-                                         : Tools::Draw::PaletteColors::NONE);
+  Tools::Draw::border_with_title(
+      p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 }
 
 }; // namespace UI::Views
