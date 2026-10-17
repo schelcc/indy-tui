@@ -11,6 +11,7 @@
 
 #include "input.hpp"
 #include "locked.hpp"
+#include "types.hpp"
 #include "views.hpp"
 
 namespace UI {
@@ -41,7 +42,7 @@ struct BlockList {
   std::mutex m;
 
   void solve(std::shared_ptr<ncpp::Plane> = nullptr);
-  void render(bool const);
+  void render(UI::RenderLevel const, bool const);
   bool take_input(Input::KeyWithMod const &);
   void cycle_focus(UI::FocusDirection const);
 

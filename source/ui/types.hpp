@@ -38,4 +38,6 @@ enum class Style : uint16_t {
   UNDERCURL = static_cast<uint16_t>(ncpp::CellStyle::Undercurl),
 };
 
+enum class RenderLevel { LIGHT, FULL };
+
 }; // namespace UI

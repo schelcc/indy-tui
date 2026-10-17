@@ -1,5 +1,6 @@
 #include "ui/layout.hpp"
 #include "input.hpp"
+#include "types.hpp"
 #include "widget.hpp"
 #include <memory>
 #include <mutex>
@@ -135,21 +136,30 @@ void BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
   }
 }
 
-void BlockList::render(bool const parent_focused) {
+void BlockList::render(UI::RenderLevel const render_level,
+                       bool const parent_focused) {
   struct Vis {
     Block &b;
     bool focused;
+    UI::RenderLevel render_level;
     void operator()(std::shared_ptr<UI::Views::View> &v) {
       if (v->render_callback.has_value())
-        v->render_callback.value()(b.plane, focused);
+        v->render_callback.value()(render_level, b.plane, focused);
     }
 
-    void operator()(BlockList &l) { l.render(focused); }
+    void operator()(BlockList &l) { l.render(render_level, focused); }
   };
   std::unique_lock lock(m);
 
   if (parent == nullptr)
     return;
+
+  // Render only focused child if it's a light render
+  if (render_level == UI::RenderLevel::LIGHT) {
+    auto it = *focused_elem_it.get_mut();
+    it->element.visit(Vis{*it, true, UI::RenderLevel::LIGHT});
+    return;
+  }
 
   // Optimization note: Potentially move rendering out to thread
   // pools? Have leaf blocks be able to dispatch to them? If we are
@@ -157,7 +167,8 @@ void BlockList::render(bool const parent_focused) {
   // imagine it's too bad.
   auto focused_elem = focused_elem_it.get_const();
   for (auto it = elements.begin(); it < elements.end(); it++)
-    it->element.visit(Vis{*it, (parent_focused && (it == *focused_elem))});
+    it->element.visit(
+        Vis{*it, (parent_focused && (it == *focused_elem)), render_level});
 }
 
 bool BlockList::take_input(Input::KeyWithMod const &k) {
