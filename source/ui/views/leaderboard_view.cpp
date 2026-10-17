@@ -101,7 +101,7 @@ void LeaderboardView::update_and_render(
   // TODO - Figure out a better spot for this
   set_num_drivers(drivers->size());
 
-  p->erase();
+  auto locked_table = table.get_mut();
 
   // Do nothing if we have no columns or no drivers
   if (!drivers->empty() && !_cols.get_const()->empty() &&
@@ -109,8 +109,6 @@ void LeaderboardView::update_and_render(
 
     // Let's try the fully synchronous method and profile it, improve it if
     // necessary
-
-    auto locked_table = table.get_mut();
 
     auto dim = locked_table->get_dim();
 
@@ -150,8 +148,16 @@ void LeaderboardView::update_and_render(
 
       App::PerfContext::StopLeaderboardPopulationTime();
     }
+  }
+  p->erase();
+  locked_table->apply(p);
+  always_render(std::move(locked_table), focused, p);
+}
 
-    locked_table->apply(p);
+// Lighter render
+void LeaderboardView::update_and_render(bool const focused,
+                                        std::shared_ptr<ncpp::Plane> p) {
+  auto locked_table = table.get_mut();
 
     {
       auto h_rows = highlight_rows.get_const();
@@ -163,13 +169,28 @@ void LeaderboardView::update_and_render(
       }
     }
 
-    // Draw cursor, if focused
-    if (focused) {
-      auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
-                                                  UI::Color::BLUE_SOFT);
-      p->stain((table_cursor.load() % dim.rows) + 1, 1, 1, p->get_dim_x() - 1,
-               color, color, color, color);
+// Steps to always render
+void LeaderboardView::always_render(
+    ThreadSafe::LockPair<UI::Table> &&locked_table, bool const focused,
+    std::shared_ptr<ncpp::Plane> p) {
+  auto dim = locked_table->get_dim();
+
+  {
+    auto h_rows = highlight_rows.get_const();
+    for (auto const &[idx, color] : *h_rows) {
+      auto ncpp_color =
+          Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG, color);
+      p->stain((idx % dim.rows) + 1, 1, 1, p->get_dim_x() - 1, ncpp_color,
+               ncpp_color, ncpp_color, ncpp_color);
     }
+  }
+
+  // Draw cursor, if focused
+  if (focused) {
+    auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
+                                                UI::Color::BLUE_SOFT);
+    p->stain((table_cursor.load() % dim.rows) + 1, 1, 1, p->get_dim_x() - 1,
+             color, color, color, color);
   }
 
   Tools::Draw::border_with_title(

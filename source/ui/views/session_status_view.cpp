@@ -61,4 +61,10 @@ void SessionStatusView::update_and_render(Core::Session const &sess,
       p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 }
 
+void SessionStatusView::update_and_render(bool const focused,
+                                          std::shared_ptr<ncpp::Plane> p) {
+  Tools::Draw::border_with_title(
+      p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+}
+
 }; // namespace UI::Views

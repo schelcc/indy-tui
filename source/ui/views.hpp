@@ -18,6 +18,7 @@
 #include "string.hpp"
 #include "telemetry/telemetry_board.hpp"
 
+#include "types.hpp"
 #include "ui/widget.hpp"
 
 namespace UI::Views {
@@ -30,6 +31,9 @@ struct TrackSessionView {
 
   void update_and_render(Telemetry::TrackSession const &, bool const,
                          std::shared_ptr<ncpp::Plane>);
+
+  // Lighter render
+  void update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
@@ -44,6 +48,9 @@ struct SessionStatusView {
 
   void update_and_render(Core::Session const &, bool const,
                          std::shared_ptr<ncpp::Plane>);
+
+  // Lighter render
+  void update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
@@ -99,6 +106,9 @@ struct LeaderboardView {
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
       bool const, std::shared_ptr<ncpp::Plane>);
 
+  // Lighter render
+  void update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+
   bool take_input(Input::KeyWithMod const &);
 
   LeaderboardView();
@@ -110,6 +120,10 @@ private:
   void reconstruct_table(ThreadSafe::LockPair<UI::Table> &&,
                          ThreadSafe::LockPair<std::vector<ColumnInfo>> &&,
                          ThreadSafe::LockPair<size_t> &&);
+
+  // Logic the same across both renders
+  void always_render(ThreadSafe::LockPair<UI::Table> &&, bool const,
+                     std::shared_ptr<ncpp::Plane>);
 };
 
 using view_variant =
@@ -119,16 +133,18 @@ struct View : public view_variant {
   using view_variant::variant;
   using view_variant::operator=;
 
-  std::optional<std::function<void(std::shared_ptr<ncpp::Plane>, bool)>>
+  std::optional<
+      std::function<void(UI::RenderLevel, std::shared_ptr<ncpp::Plane>, bool)>>
       render_callback = std::nullopt;
 
   template <typename F>
-    requires(std::is_invocable_r_v<void, F, std::shared_ptr<ncpp::Plane>, bool,
-                                   View &>)
+    requires(std::is_invocable_r_v<void, F, UI::RenderLevel,
+                                   std::shared_ptr<ncpp::Plane>, bool, View &>)
   void set_render_callback(F &&f) {
-    render_callback = [this, f = std::move(f)](std::shared_ptr<ncpp::Plane> p,
+    render_callback = [this, f = std::move(f)](UI::RenderLevel render_level,
+                                               std::shared_ptr<ncpp::Plane> p,
                                                bool focused) {
-      f(p, focused, *this);
+      f(render_level, p, focused, *this);
     };
   }
 

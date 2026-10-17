@@ -68,4 +68,10 @@ void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
       p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 }
 
+void TrackSessionView::update_and_render(bool const focused,
+                                         std::shared_ptr<ncpp::Plane> p) {
+  Tools::Draw::border_with_title(
+      p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+}
+
 }; // namespace UI::Views
