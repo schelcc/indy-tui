@@ -25,8 +25,6 @@ enum class Color {
   NONE = 16,
 };
 
-// using Color = Tools::Draw::PaletteColors;
-
 enum class Target { FOREGROUND, BACKGROUND };
 
 enum class Style : uint16_t {

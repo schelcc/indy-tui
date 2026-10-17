@@ -74,8 +74,6 @@ struct LeaderboardView {
                Core::IsOneOf<
                    std::invoke_result_t<F, Telemetry::DriverTelemetry const &>,
                    UI::String, std::string, std::wstring>)
-    // requires(std::is_invocable_r_v<UI::String, F,
-    //                                Telemetry::DriverTelemetry const &>)
     ColumnInfo(F &&f, UI::String &&s, UI::Align a = UI::Align::LEFT)
         : func([f = std::forward<F>(f)](Telemetry::DriverTelemetry const &d) {
             return std::invoke(f, d);
@@ -169,10 +167,6 @@ struct View : public view_variant {
              std::is_constructible_v<T, Args...>)
   View(Args &&...args)
       : view_variant(std::in_place_type<T>, std::forward<Args>(args)...) {}
-
-  // template <typename T>
-  //   requires(Core::VariantHasAlternative<T, view_variant>)
-  // View() : view_variant(std::in_place_type<T>) {}
 
   template <typename T, typename... Args>
     requires(Core::VariantHasAlternative<T, view_variant>)

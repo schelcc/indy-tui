@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
-#include <numeric>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -148,8 +147,6 @@ public:
 
     for (; cur_col < padding_to; ++cur_col)
       p->putc(row, cur_col, ' ');
-    // if (cur_col < padding_to)
-    //   p->putstr(row, cur_col + 1, std::string
   }
 
   template <Core::IsOneOf<std::string, std::wstring> S>

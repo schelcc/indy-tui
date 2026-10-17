@@ -6,7 +6,6 @@
 #include "string.hpp"
 #include "telemetry/telemetry_board.hpp"
 
-#include "ui/ui.hpp"
 #include "ui/views.hpp"
 #include "widget.hpp"
 

@@ -42,7 +42,6 @@ BlockList::BlockList(BlockList &&other) noexcept {
   direction = other.direction;
   parent = other.parent;
   other.parent = nullptr;
-  // input_handler = std::move(other.input_handler);
   *focused_elem_it.get_mut() = elements.begin();
   input_handler = Input::InputHandler{};
   init_handler();
@@ -54,7 +53,6 @@ BlockList &BlockList::operator=(BlockList &&other) noexcept {
   direction = other.direction;
   parent = other.parent;
   other.parent = nullptr;
-  // input_handler = std::move(other.input_handler);
   *focused_elem_it.get_mut() = elements.begin();
   input_handler = Input::InputHandler{};
   init_handler();
@@ -185,12 +183,8 @@ bool BlockList::take_input(Input::KeyWithMod const &k) {
     return true;
   }
 
-  else // if (focused_element_idx.get_const()->has_value())
-  {
+  else {
     return (*(*focused_elem_it.get_mut())).element.visit(Vis{k});
-    // elements.at(focused_element_idx.get_const()->value_or(0) %
-    // elements.size())
-    //     .element.visit(Vis{k});
   }
 }
 

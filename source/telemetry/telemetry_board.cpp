@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cassert>
-#include <execution>
 #include <memory>
 #include <mutex>
 #include <ncpp/CellStyle.hh>
@@ -11,15 +10,10 @@
 #include <ncpp/Root.hh>
 #include <notcurses/ncseqs.h>
 #include <notcurses/notcurses.h>
-#include <ranges>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
-#include <thread>
-#include <type_traits>
 
-#include "core.hpp"
-#include "draw.hpp"
 #include "locked.hpp"
 #include "perf.hpp"
 #include "telemetry/driver_telemetry.hpp"
@@ -29,8 +23,6 @@
 #include "ErpMessage.pb.h"
 #include "core/time.hpp"
 #include "core/units.hpp"
-
-#include "ui/ui.hpp"
 
 using proto::telemetry::ErpMessage;
 

@@ -7,6 +7,7 @@
 #include <optional>
 #include <print>
 #include <pthread.h>
+#include <queue>
 #include <string>
 #include <thread>
 #include <vector>

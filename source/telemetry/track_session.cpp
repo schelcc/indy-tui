@@ -3,6 +3,7 @@
 #include "core/units.hpp"
 #include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
+#include "tools/logger.hpp"
 
 #include <cmath>
 
@@ -65,8 +66,12 @@ void TrackSession::update(proto::telemetry::ErpMessage const &msg) {
     }
 
     if (!session_type.get_const()->has_value() && hbeat.has_sessiontype()) {
-      // TODO: Figure out mapping sessiontype str to enum
-      session_type.get_mut()->emplace(SessionType::PRACTICE);
+      if (hbeat.sessiontype() == "R")
+        session_type.get_mut()->emplace(SessionType::RACE);
+      else if (hbeat.sessiontype() == "P")
+        session_type.get_mut()->emplace(SessionType::PRACTICE);
+      else
+        session_type.get_mut()->emplace(SessionType::QUALIFYING);
     }
 
     if (hbeat.has_sessionstatus() &&

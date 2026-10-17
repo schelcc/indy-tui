@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <stop_token>
 #include <string_view>
 #include <thread>
@@ -18,7 +19,6 @@
 #include "core/session.hpp"
 #include "core/time.hpp"
 #include "input.hpp"
-#include "layout.hpp"
 #include "tools/strings.hpp"
 
 namespace Workers {

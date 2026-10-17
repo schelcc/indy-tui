@@ -235,33 +235,4 @@ void Table::clear() noexcept {
       Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
 }
 
-// std::expected<void, WidgetErr>
-// Table::set_row_mod(size_t const row, UI::Style style, UI::Color color) {
-//   if (row >= get_dim().rows)
-//     return WidgetErr(WidgetErr::OUT_OF_RANGE);
-
-//   std::unique_lock lock(_mtx);
-
-//   auto row_it = std::ranges::find_if(
-//       _row_mods, [row](RowMods const &m) { return m.index == row; });
-//   if (row_it != _row_mods.end())
-//     *row_it = RowMods{row, color, style};
-//   else
-//     _row_mods.emplace_back(row, color, style);
-
-//   return {};
-// }
-
-// std::expected<void, WidgetErr> Table::clear_row_mod(size_t const row) {
-//   if (row >= get_dim().rows)
-//     return WidgetErr(WidgetErr::OUT_OF_RANGE);
-
-//   std::unique_lock lock(_mtx);
-
-//   auto [start, end] = std::ranges::remove_if(
-//       _row_mods, [row](RowMods const &m) { return m.index == row; });
-//   _row_mods.erase(start, end);
-//   return {};
-// }
-
 }; // namespace UI

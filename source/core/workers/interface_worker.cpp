@@ -73,9 +73,8 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         UI::Views::View::MakeView<UI::Views::SessionStatusView>();
 
     sess_status_view->set_render_callback(
-        [&render_mtx, this](UI::RenderLevel render_level,
-                            std::shared_ptr<ncpp::Plane> p, bool focused,
-                            UI::Views::View &view) -> void {
+        [this](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
+               bool focused, UI::Views::View &view) -> void {
           if (render_level == UI::RenderLevel::FULL)
             view.as<UI::Views::SessionStatusView>().update_and_render(
                 sess, focused, p);
@@ -136,11 +135,6 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
   root_layout.solve(std_plane);
 
-  // Used for allowing early renders triggered from input thread
-  // UI::RenderLevel render_level = UI::RenderLevel::FULL;
-  // std::mutex render_cv_mtx;
-  // std::condition_variable_any render_cv;
-
   std::jthread render_thread =
       std::jthread{[&render_mtx, this](std::stop_token stop_tok) {
         while (!stop_tok.stop_requested()) {
@@ -188,13 +182,6 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         handler.handle_input(k);
       else
         handled = root_layout.take_input(k);
-
-      // if (handled) {
-      //   Tools::Log::Debug("Triggering early render", "ROOT-INPUT");
-      //   std::lock_guard lock(render_cv_mtx);
-      //   render_level = UI::RenderLevel::LIGHT;
-      //   render_cv.notify_all();
-      // }
     };
 
     // Interface worker spawns and manages input thread
@@ -215,10 +202,6 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
   Time::TimePoint last_tick = Time::Clock::now();
 
-  [[maybe_unused]] size_t cnt = 0;
-
-  App::PerfContext::Get();
-
   using Telemetry::TelemetryBoard;
   using Telemetry::TelemetryQueue;
 
@@ -236,18 +219,8 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   auto last_full_render = Time::Clock::now();
   bool init_render_done = false;
 
-  // CALLGRIND_START_INSTRUMENTATION;
   while (!stop_tok.stop_requested()) [[likely]] {
-    // CALLGRIND_TOGGLE_COLLECT;
 
-    if ((cnt++ % 10) == 0) {
-      // App::PerfContext::LogKeyHandleTime();
-      // App::PerfContext::LogLeaderboardPopulationTime();
-      // App::PerfContext::LogRenderTime();
-      App::PerfContext::LogInformBoardTime();
-    }
-
-    // Populate the leaderboard async
     std::this_thread::sleep_for(Time::Duration::UIntMilliSec(10));
 
     if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Press)) {

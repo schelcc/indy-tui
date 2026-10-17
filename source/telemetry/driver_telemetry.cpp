@@ -26,7 +26,6 @@ void DriverTelemetry::take_new_telemetry(
       (_telemetry.lapdistance() >= (_lap_length.load() * LAP_DIST_RESET_PCT)));
 
   // Take in new telemetry
-  // _telemetry = std::move(telem);
   _telemetry.Swap(&telem);
   _car_num = _telemetry.carnumber();
   _frames_since_telem = 0;
@@ -35,30 +34,18 @@ void DriverTelemetry::take_new_telemetry(
 
 void DriverTelemetry::take_new_results(
     proto::telemetry::ErpOverallResults &&results) noexcept {
-  // _results = std::move(results);
   _results.Swap(&results);
   _new_results = true;
 }
 
 void DriverTelemetry::take_new_lap(
     proto::telemetry::ErpCompletedLapResult &&lap) noexcept {
-  // _completed_lap = std::move(lap);
   _completed_lap.Swap(&lap);
   _new_lap = true;
 }
 
 void DriverTelemetry::refresh() noexcept {
   if (_new_telem) {
-    // Pit-status update
-    // if (_telemetry.has_isinpit()) {
-    //   in_pit_count = (_telemetry.isinpit() ? in_pit_count + 1 : 0);
-
-    //   in_pit = in_pit_count >= MIN_IN_PIT_CNT;
-    // } else {
-    //   in_pit_count = 0;
-    //   in_pit = false;
-    // }
-
     in_pit_count = _telemetry.has_isinpit()
                        ? (_telemetry.isinpit() ? in_pit_count + 1 : 0)
                        : 0;
@@ -107,15 +94,19 @@ void DriverTelemetry::refresh() noexcept {
     _new_telem = false;
   }
 
-  // if (_new_results) {
+  /*
+  if (_new_results) {
 
-  //   _new_results = false;
-  // }
+    _new_results = false;
+  }
+  */
 
-  // if (_new_lap) {
+  /*
+  if (_new_lap) {
 
-  //   _new_lap = false;
-  // }
+    _new_lap = false;
+  }
+  */
 
   // Do at the start of each lap
   if (_results.has_laps() &&

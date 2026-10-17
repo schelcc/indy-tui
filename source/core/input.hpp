@@ -58,9 +58,6 @@ struct KeyCallback {
       : callback(
             [_callback = std::move(_callback)]() { std::invoke(_callback); }),
         desc(_desc) {}
-
-  // KeyCallback(KeyCallback &&) = delete;
-  // KeyCallback &operator=(KeyCallback &&) = delete;
 };
 
 }; // namespace Input

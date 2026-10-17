@@ -1,9 +1,7 @@
 #pragma once
 
 #include <expected>
-#include <functional>
 #include <memory>
-#include <mutex>
 #include <ncpp/Plane.hh>
 #include <shared_mutex>
 #include <string>
@@ -12,7 +10,6 @@
 #include <vector>
 
 #include "ErpMessage.pb.h"
-#include "google/protobuf/repeated_ptr_field.h"
 #include "locked.hpp"
 
 #include <ncpp/Plane.hh>

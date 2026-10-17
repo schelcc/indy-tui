@@ -1,19 +1,18 @@
+#include <ncpp/Plane.hh>
+#include <optional>
+#include <string_view>
+
+#include "core/app_context.hpp"
 #include "core/session.hpp"
-#include "app_context.hpp"
-#include "appsync_resolver.hpp"
-#include "draw.hpp"
+#include "core/time.hpp"
+
+#include "tools/appsync_resolver.hpp"
+#include "tools/logger.hpp"
+
 #include "ixwebsocket/IXWebSocket.h"
 #include "ixwebsocket/IXWebSocketMessage.h"
 #include "telemetry/telemetry_frame.hpp"
 #include "telemetry/telemetry_queue.hpp"
-#include "time.hpp"
-#include "ui/ui.hpp"
-#include <csignal>
-#include <ncpp/Plane.hh>
-#include <optional>
-#include <queue>
-#include <string_view>
-#include <thread>
 
 using Tools::Log;
 
@@ -189,35 +188,6 @@ std::expected<void, Session::Err> Session::start_session() noexcept {
     _socket->close();
   }});
 
-  // Start the enqueue thread
-  // _threads.emplace_back(std::jthread{[this] {
-  //   // Wait for the session to start
-  //   _start_latch.wait();
-  //   Log::Debug("Enqueue thread activated", "SESS-ENQ");
-
-  //   while (_running.load()) {
-  //     using QueueErr = Telemetry::TelemetryQueue::Err;
-
-  //     // Don't block forever waiting for the recv semaphore
-  //     auto block_until = Time::Clock::now() +
-  //     Time::Duration::UIntMilliSec(100);
-
-  //     std::scoped_lock lock(_recv_mtx);
-
-  //     if (!_recv_payload.empty()) {
-  //       auto enq_res = _queue.enqueue(_recv_payload);
-
-  //       // DELAY_FULL is ok, we just do nothing
-  //       if (!enq_res.has_value() &&
-  //           (enq_res.error().kind != QueueErr::DELAY_FULL)) {
-  //         Log::Warn("Unhandled enqueue error!", "SESS-ENQ");
-  //       }
-  //     }
-
-  //     std::this_thread::sleep_until(block_until);
-  //   }
-  // }});
-
   if (init_res.has_value())
     return std::unexpected(init_res.value());
 
@@ -278,79 +248,5 @@ void Session::on_message(const ix::WebSocketMessagePtr &msg) {
       Log::Warn("Unhandled enqueue error!", "SESS-ENQ");
   }
 };
-
-// void Session::draw_telem_status(std::shared_ptr<ncpp::Plane> plane) {
-//   plane->erase();
-
-//   plane->perimeter_rounded(ncpp::NCBox::CornerMask, plane->get_channels(),
-//   0);
-
-//   size_t row = 0;
-
-//   UI::SimpleTableSketcher put_simple_field(plane, row);
-
-//   // Title
-//   plane->putstr(row++, 1,
-//                 std::format("Telemetry Session Status [Type: {}]",
-//                             SessionSourceStrs.at(static_cast<size_t>(_source)))
-//                     .data());
-
-//   if (_source == SessionSource::SERVED_DEBUG ||
-//       _source == SessionSource::SERVED_REMOTE) {
-//     std::string status_str{};
-//     switch (status.load()) {
-//     case Status::NOT_STARTED:
-//       status_str = "Not Connected";
-//       break;
-//     case Status::INITIATING:
-//       status_str = "Initiating connection";
-//       break;
-//     case Status::STARTED:
-//       status_str = "Connected";
-//       break;
-//     }
-//     put_simple_field("Server Connection Status", status_str);
-//   }
-
-//   auto delay_res = get_delay_sec();
-//   std::optional<std::string> delay_s = {};
-//   if (delay_res.has_value())
-//     delay_s = std::format("{} s", delay_res.value());
-
-//   double msg_rate = 1000 / msg_recv_period.load().count();
-//   UI::Color msg_rate_color;
-//   if (msg_rate > 9.0)
-//     msg_rate_color = UI::Color::GREEN_SOFT;
-//   else if (msg_rate > 8.0)
-//     msg_rate_color = UI::Color::YELLOW_SOFT;
-//   else
-//     msg_rate_color = UI::Color::RED_SOFT;
-
-//   UI::String msg_rate_str(std::format("{:5.2f} Hz", msg_rate),
-//   msg_rate_color); Time::Duration::DblMilliSec since_last_msg =
-//       Time::Clock::now() - last_msg_time.load();
-
-//   if (since_last_msg.count() > 200)
-//     msg_rate_str += UI::String(std::format(" (last msg. received {:.2f}s
-//     ago)",
-//                                            since_last_msg.count() / 1000),
-//                                UI::Color::GRAY_HARD, UI::Style::ITALIC);
-
-//   put_simple_field("Observed message rate", msg_rate_str);
-
-//   put_simple_field("Configured delay", delay_s);
-
-//   if (delay_res.value_or(0) > 0) {
-//     double delay_pct =
-//         get_accrued_delay_ms().count() / (1000 * delay_res.value_or(1));
-//     plane->putstr(row++, 1,
-//                   std::format(L"Delay status: ├{:20}┤ [{:5.2f}%]",
-//                               Tools::Draw::prog_bar(
-//                                   delay_pct, 20,
-//                                   Tools::Draw::BarType::SHORT),
-//                               delay_pct * 100)
-//                       .data());
-//   }
-// }
 
 }; // namespace Core

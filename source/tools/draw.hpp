@@ -1,8 +1,5 @@
 #pragma once
-#include "core.hpp"
-#include "tools/numeric.hpp"
-#include "ui/layout.hpp"
-#include "ui/types.hpp"
+
 #include <cassert>
 #include <cmath>
 #include <memory>
@@ -11,6 +8,9 @@
 #include <ncpp/Plane.hh>
 #include <notcurses/notcurses.h>
 #include <string_view>
+
+#include "tools/numeric.hpp"
+#include "ui/types.hpp"
 
 namespace Tools::Draw {
 
@@ -43,7 +43,6 @@ static inline std::wstring prog_bar(double pct, size_t chars,
   };
   };
 
-  // assert(leq(pct, 1.0));
   pct = std::min(pct, 1.0);
 
   // Replace all chars up to the incomplete portion with a full block

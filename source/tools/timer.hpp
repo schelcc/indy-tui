@@ -2,6 +2,7 @@
 #include <concepts>
 #include <memory>
 #include <semaphore>
+#include <stop_token>
 #include <thread>
 
 namespace Tools {
@@ -17,20 +18,18 @@ class Timer {
   using duration_t = std::chrono::duration<size_t, std::ratio<1, 1000>>;
   std::atomic<duration_t> _duration;
 
-  std::atomic_bool _running;
-
-  std::thread _thread;
+  std::jthread _thread;
 
 public:
   Timer(std::shared_ptr<std::binary_semaphore> release,
         std::chrono::duration<size_t, std::ratio<1, 1000>> duration =
             std::chrono::milliseconds(1000))
-      : _release(release), _duration(duration), _running(true) {
-    _thread = std::thread{[this]() {
+      : _release(release), _duration(duration) {
+    _thread = std::jthread{[this](std::stop_token stop_tok) {
       // Block for start signal
       _start.acquire();
 
-      while (_running) {
+      while (!stop_tok.stop_requested()) {
         // TODO : Add pausing
         _release->release();
         std::this_thread::sleep_for(_duration.load());
@@ -41,13 +40,12 @@ public:
         std::shared_ptr<std::binary_semaphore> stagger,
         std::chrono::duration<size_t, std::ratio<1, 1000>> duration =
             std::chrono::milliseconds(1000))
-      : _release(release), _stagger(stagger), _duration(duration),
-        _running(true) {
-    _thread = std::thread{[this]() {
+      : _release(release), _stagger(stagger), _duration(duration) {
+    _thread = std::jthread{[this](std::stop_token stop_tok) {
       // Block for start signal
       _start.acquire();
 
-      while (_running) {
+      while (!stop_tok.stop_requested()) {
         _stagger->acquire();
         _release->release();
         std::this_thread::sleep_for(_duration.load());
@@ -61,7 +59,7 @@ public:
 
   /** @brief Stop the timer. Thread cannot return from stopped state, making the
    * timer useless after stop is called. Thread safe. */
-  void stop() noexcept { _running = false; }
+  void stop() noexcept { _thread.request_stop(); }
 
   /** @brief Change the timer's period. Thread safe. */
   void set_period(std::convertible_to<duration_t> auto const period) {

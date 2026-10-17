@@ -128,7 +128,6 @@ private:
   // widths
 
   // Columns of rows
-  // std::vector<std::vector<std::optional<UI::String>>> _table{};
   std::vector<Column> _table{};
 
 public:
@@ -235,11 +234,6 @@ struct _Widget : std::variant<Ts...> {
   template <typename T>
     requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
   _Widget(T &&t) : std::variant<Ts...>::variant(std::forward<T>(t)) {}
-
-  // template <Core::IsOneOf_ignore_cvref<Ts...> T, typename... Args>
-  // _Widget(Args &&...args)
-  //     : std::variant<Ts...>::variant(std::in_place_type<T>,
-  //                                    std::forward<Args>(args)...) {}
 
   template <Core::IsOneOf<Ts...> T, typename... Args>
   static std::shared_ptr<_Widget> MakeWidget(Args &&...args) {

@@ -36,7 +36,6 @@ private:
 
   std::thread _write_thread;
 
-  // std::atomic_bool keep_logging{true};
   std::atomic_flag keep_logging{true};
 
   std::mutex _log_out_mtx;
@@ -145,8 +144,6 @@ public:
 
     Get().log(ERROR, msg, source);
   }
-
-  // [[nodiscard]] static double GetWriteRate() { return Get()._log_hz.load(); }
 };
 
 template <typename T>

@@ -1,17 +1,13 @@
 #pragma once
 
 #include <cassert>
-#include <deque>
 #include <expected>
-#include <format>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <shared_mutex>
 #include <string_view>
 
 #include "core/time.hpp"
-#include "logger.hpp"
 #include "telemetry/telemetry_frame.hpp"
 
 namespace Telemetry {

@@ -163,7 +163,6 @@ void LeaderboardView::update_and_render(bool const focused,
   locked_table->apply_row(p, (table_cursor.load() - 1) % rows);
   locked_table->apply_row(p, table_cursor.load() % rows);
   locked_table->apply_row(p, (table_cursor.load() + 1) % rows);
-  // locked_table->apply_row(p, table_cursor.load() % rows);
 
   always_render(std::move(locked_table), focused, p);
 }
