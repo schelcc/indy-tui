@@ -120,6 +120,7 @@ public:
 
   PERF_ASPECT_G2G(LeaderboardPopulationTime);
   PERF_ASPECT_G2G(RenderTime);
+  PERF_ASPECT_G2G(InformBoardTime);
 
   PerfContext() = default;
   ~PerfContext() = default;

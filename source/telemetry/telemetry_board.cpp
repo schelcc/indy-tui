@@ -21,6 +21,7 @@
 #include "core.hpp"
 #include "draw.hpp"
 #include "locked.hpp"
+#include "perf.hpp"
 #include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
 #include "telemetry/telemetry_frame.hpp"
@@ -68,7 +69,7 @@ void TelemetryBoard::reassociate_drivers() noexcept {
 
 std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
     std::unique_ptr<TelemetryFrame> &&frame) noexcept {
-  if (!frame->is_valid())
+  if (!frame->is_valid()) [[unlikely]]
     return std::unexpected(Err(TelemetryBoard::Err::FRAME_INVALID));
 
   ErpMessage message{frame->take_from()};
@@ -78,7 +79,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
 
   // Don't move on if we don't yet have track length or total checkpoints
   if (!session_info.num_checkpts.get_const()->has_value() ||
-      !session_info.lap_length.get_const()->has_value())
+      !session_info.lap_length.get_const()->has_value()) [[unlikely]]
     return {};
 
   assert(session_info.num_checkpts.get_const()->value() > 0);
@@ -108,6 +109,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   std::unique_lock map_lock(_driver_map_mtx);
   std::unique_lock vec_lock(_driver_vec_mtx);
 
+  App::PerfContext::StartInformBoardTime();
   if (message.telemetrymessages_size() > 0) {
     // Increment the stale count on all drivers, then we'll reset the ones we
     // come accross (only if we got any telemetry)
@@ -150,6 +152,7 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   // above loops as possible
   std::for_each(std::execution::par_unseq, std::begin(_drivers),
                 std::end(_drivers), [](auto &d) { d.refresh(); });
+  App::PerfContext::StopInformBoardTime();
 
   return {};
 }
