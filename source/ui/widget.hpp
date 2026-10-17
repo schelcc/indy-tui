@@ -159,6 +159,9 @@ public:
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
   void apply(std::shared_ptr<ncpp::Plane>) const noexcept;
 
+  /** @brief Apply select rows to a plane. Does not synchronize plane access. */
+  void apply_row(std::shared_ptr<ncpp::Plane>, size_t const) const noexcept;
+
   /** @brief Set the string at the specified row and column to the given value.
    * Cell must be within the table's current dimensions. Returns expected
    * containing void if successful, otherwise the error which occured. */

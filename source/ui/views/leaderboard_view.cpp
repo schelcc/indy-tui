@@ -159,15 +159,14 @@ void LeaderboardView::update_and_render(bool const focused,
                                         std::shared_ptr<ncpp::Plane> p) {
   auto locked_table = table.get_mut();
 
-    {
-      auto h_rows = highlight_rows.get_const();
-      for (auto const &[idx, color] : *h_rows) {
-        auto ncpp_color =
-            Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG, color);
-        p->stain((idx % dim.rows) + 1, 1, 1, p->get_dim_x() - 1, ncpp_color,
-                 ncpp_color, ncpp_color, ncpp_color);
-      }
-    }
+  auto rows = locked_table->get_dim().rows;
+  locked_table->apply_row(p, (table_cursor.load() - 1) % rows);
+  locked_table->apply_row(p, table_cursor.load() % rows);
+  locked_table->apply_row(p, (table_cursor.load() + 1) % rows);
+  // locked_table->apply_row(p, table_cursor.load() % rows);
+
+  always_render(std::move(locked_table), focused, p);
+}
 
 // Steps to always render
 void LeaderboardView::always_render(

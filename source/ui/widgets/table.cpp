@@ -194,43 +194,37 @@ void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
                                        ? (col.max_width - row_s.size())
                                        : ((col.max_width - row_s.size()) / 2)));
 
-      // row_s += (row_s.size() < col.max_width)
-      //              ? std::string('x', col.max_width - row_s.size())
-      //              : "";
-
       row_s.apply_to_plane(p, row_offset, x, padding_to_col);
-
-      // if (row_s.size() < col.max_width)
-      //   p->putstr(row_offset, x + 1,
-      //             std::string(' ', col.max_width - row_s.size()).data());
-
-      // if (col.props.align == Align::LEFT) {
-      //   row.value_or(empty_cell).apply_to_plane(p, row_offset, col_pos);
-      // } else {
-      //   auto row_s = row.value_or(empty_cell);
-      //   row_s.apply_to_plane(p, row_offset,
-      //                        col_pos +
-      //                            ((col.props.align == Align::RIGHT)
-      //                                 ? col.max_width - row_s.size()
-      //                                 : (col.max_width - row_s.size()) / 2));
-      // }
       row_offset++;
     }
     col_pos += (col.max_width + column_sep);
   }
+}
 
-  // for (auto const &[row, color, style] : _row_mods) {
-  //   auto xlen = p->get_dim_x();
+void Table::apply_row(std::shared_ptr<ncpp::Plane> p,
+                      size_t const row) const noexcept {
+  assert(row < get_dim().rows);
+  std::shared_lock lock(_mtx);
 
-  //   if (color != Color::NONE) {
-  //     auto chan = MakeChannels(p, color);
-  //     p->stain(row, 0, 1, xlen, chan, chan, chan, chan);
-  //   }
+  size_t idx = 0;
+  size_t col_pos = 1;
+  for (auto const &col : _table) {
 
-  //   if (style != Style::NORMAL)
-  //     p->format(row, 0, 1, xlen,
-  //               static_cast<std::underlying_type_t<UI::Style>>(style));
-  // }
+    size_t padding_to_col =
+        col_pos + col.max_width +
+        ((idx++ == (_table.size() - 1)) ? 0ul : column_sep.load());
+
+    auto row_s = col.rows.at(row).value_or(empty_cell);
+
+    size_t x = (col.props.align == Align::LEFT)
+                   ? col_pos
+                   : (col_pos + ((col.props.align == Align::RIGHT)
+                                     ? (col.max_width - row_s.size())
+                                     : ((col.max_width - row_s.size()) / 2)));
+
+    row_s.apply_to_plane(p, row + 1, x, padding_to_col);
+    col_pos += (col.max_width + column_sep);
+  }
 }
 
 void Table::clear() noexcept {
