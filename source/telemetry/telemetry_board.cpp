@@ -87,23 +87,20 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   // Check whether the driver is in the map, adding it if not. If the carnumber
   // couldn't be found, return false. If successful, return true. Can add in a
   // condition and guard initialized with short circuiting
-  auto check_and_populate = [this](auto const &iter) {
-    assert(iter.has_carnumber());
+  auto check_and_populate =
+      [](auto const &iter, decltype(_driver_map) &map, decltype(_drivers) &vec,
+         decltype(session_info) &sess_info) -> DriverTelemetry * {
+    std::string_view car_num = iter->carnumber();
 
-    std::string const &car_num = iter.carnumber();
-
-    if (!_driver_map.contains(car_num)) {
-
-      _driver_map[car_num] = _drivers.size();
-      _drivers.emplace_back();
-
-      auto &d = _drivers.back();
-
-      d.set_checkpoints(session_info.num_checkpts.get_const()->value());
-      d.set_lap_length(session_info.lap_length.get_const()->value());
-    }
-
-    return true;
+    if (!map.contains(car_num.data())) [[unlikely]] {
+      map.emplace(car_num.data(), vec.size());
+      vec.emplace_back();
+      DriverTelemetry *out = &vec.back();
+      out->set_checkpoints(sess_info.num_checkpts.get_const()->value());
+      out->set_lap_length(sess_info.lap_length.get_const()->value());
+      return out;
+    } else [[likely]]
+      return &vec.at(map.at(car_num.data()));
   };
 
   std::unique_lock map_lock(_driver_map_mtx);
