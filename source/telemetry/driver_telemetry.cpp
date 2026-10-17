@@ -4,6 +4,7 @@
 #include <execution>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 
 namespace Telemetry {
@@ -16,6 +17,7 @@ void DriverTelemetry::take_new_telemetry(
   if (_telemetry.has_lapdistance() &&
       (telem.lapdistance() < _telemetry.lapdistance()) &&
       (_telemetry.lapdistance() <= (_lap_length.load() * LAP_DIST_RESET_PCT)))
+      [[unlikely]]
     telem.set_lapdistance(_telemetry.lapdistance());
 
   // Decreasing lap distance => Current lap distance is above reset threshold
@@ -24,7 +26,8 @@ void DriverTelemetry::take_new_telemetry(
       (_telemetry.lapdistance() >= (_lap_length.load() * LAP_DIST_RESET_PCT)));
 
   // Take in new telemetry
-  _telemetry = std::move(telem);
+  // _telemetry = std::move(telem);
+  _telemetry.Swap(&telem);
   _car_num = _telemetry.carnumber();
   _frames_since_telem = 0;
   _new_telem = true;
@@ -32,75 +35,73 @@ void DriverTelemetry::take_new_telemetry(
 
 void DriverTelemetry::take_new_results(
     proto::telemetry::ErpOverallResults &&results) noexcept {
-  _results = std::move(results);
+  // _results = std::move(results);
+  _results.Swap(&results);
   _new_results = true;
 }
 
 void DriverTelemetry::take_new_lap(
     proto::telemetry::ErpCompletedLapResult &&lap) noexcept {
-  _completed_lap = std::move(lap);
+  // _completed_lap = std::move(lap);
+  _completed_lap.Swap(&lap);
   _new_lap = true;
 }
 
 void DriverTelemetry::refresh() noexcept {
   if (_new_telem) {
     // Pit-status update
-    if (_telemetry.has_isinpit()) {
-      in_pit_count = (_telemetry.isinpit() ? in_pit_count + 1 : 0);
+    // if (_telemetry.has_isinpit()) {
+    //   in_pit_count = (_telemetry.isinpit() ? in_pit_count + 1 : 0);
 
-      in_pit = in_pit_count >= MIN_IN_PIT_CNT;
-    } else {
-      in_pit_count = 0;
-      in_pit = false;
-    }
+    //   in_pit = in_pit_count >= MIN_IN_PIT_CNT;
+    // } else {
+    //   in_pit_count = 0;
+    //   in_pit = false;
+    // }
+
+    in_pit_count = _telemetry.has_isinpit()
+                       ? (_telemetry.isinpit() ? in_pit_count + 1 : 0)
+                       : 0;
+    in_pit = in_pit_count >= MIN_IN_PIT_CNT;
 
     // Checkpoint update
-    if (_telemetry.has_lapdistance()) {
-      auto checkpt = std::div(static_cast<long>(_telemetry.lapdistance()),
-                              CHECKPOINT_DIST);
+    if (_telemetry.has_lapdistance()) [[likely]] {
+      const size_t checkpt = _telemetry.lapdistance() / CHECKPOINT_DIST;
 
-      if (static_cast<size_t>(checkpt.quot) != _cur_checkpt.load()) {
+      if (checkpt != _cur_checkpt.load()) {
         std::unique_lock lock(_dist_mtx);
-        assert(_dist_times.size() > static_cast<size_t>(checkpt.quot));
+        assert(_dist_times.size() > checkpt);
 
         Checkpoint &prec_checkpt =
-            _dist_times.at((checkpt.quot - 1) % _dist_times.size());
-        Checkpoint &this_checkpt = _dist_times.at(checkpt.quot);
+            _dist_times.at((checkpt - 1) % _dist_times.size());
+        Checkpoint &this_checkpt = _dist_times.at(checkpt);
 
-        size_t new_timestamp = _telemetry.timeofday();
+        const size_t new_timestamp = _telemetry.timeofday();
 
-        if (prec_checkpt.time.has_value()) {
-          size_t prec_timestamp = prec_checkpt.time.value();
-          // If the preceeding timestamp is significantly larger than this one,
-          // we clear it and populate this one
-          if (prec_timestamp > (new_timestamp + MAX_TIMESTAMP_DIFF_ALLOWED)) {
-            prec_checkpt.time = {};
-            prec_checkpt.age = 0;
+        const bool prec_tstamp_bad =
+            prec_checkpt.time.has_value() &&
+            (prec_checkpt.time.value() >
+             (new_timestamp + MAX_TIMESTAMP_DIFF_ALLOWED));
 
-            this_checkpt.time = new_timestamp;
-            this_checkpt.age = 0;
-          } else if (new_timestamp >
-                     (prec_timestamp + MAX_TIMESTAMP_DIFF_ALLOWED)) {
-            // If the new timestamp is significantly larger than the preceeding
-            // one, clear this one
-            this_checkpt.time = {};
-            this_checkpt.age = 0;
-          } else {
-            // This and the preceeding timestamp are likely valid
-            this_checkpt.time = new_timestamp;
-            this_checkpt.age = 0;
-          }
-        } else {
-          // Preceeding checkpoint is empty, so populate this one and move on
-          this_checkpt.time = new_timestamp;
-          this_checkpt.age = 0;
+        const bool this_tstamp_bad =
+            prec_checkpt.time.has_value() &&
+            (new_timestamp >
+             (prec_checkpt.time.value() + MAX_TIMESTAMP_DIFF_ALLOWED));
+
+        if (prec_tstamp_bad) [[unlikely]] {
+          prec_checkpt = {std::nullopt, 0};
+          this_checkpt = {new_timestamp, 0};
+        } else if (this_tstamp_bad) [[unlikely]] {
+          this_checkpt = {std::nullopt, 0};
+        } else [[likely]] {
+          this_checkpt = {new_timestamp, 0};
         }
 
         std::unique_lock checkpt_lock(_last_checkpt_mtx);
         _last_checkpt = _cur_checkpt;
-      }
 
-      _cur_checkpt.store(checkpt.quot);
+        _cur_checkpt.store(checkpt);
+      }
     }
 
     _new_telem = false;
