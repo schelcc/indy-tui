@@ -1,25 +1,24 @@
 #include <condition_variable>
-#include <exception>
 #include <initializer_list>
 #include <memory>
 #include <ncpp/NCKey.hh>
 #include <notcurses/nckeys.h>
 #include <notcurses/notcurses.h>
 #include <pthread.h>
+#include <stop_token>
 
 #include "app_context.hpp"
 #include "columns.hpp"
-#include "core.hpp"
 #include "core/workers.hpp"
 
 #include "core/time.hpp"
-#include "draw.hpp"
 #include "input.hpp"
 #include "perf.hpp"
+#include "session.hpp"
 #include "telemetry_board.hpp"
-#include "telemetry_frame.hpp"
 #include "telemetry_queue.hpp"
 #include "tools/logger.hpp"
+#include "types.hpp"
 #include "ui/layout.hpp"
 #include "views.hpp"
 #include "widget.hpp"
@@ -27,10 +26,6 @@
 using Telemetry::SessionType;
 
 namespace Workers {
-
-// int base_resizecb(struct ncplane *p) {
-//   return 0;
-// }
 
 // Helper to construct the vector to pass into BlockList
 std::vector<Layout::Block> make_row(auto &&...blocks) {
@@ -42,6 +37,27 @@ std::vector<Layout::Block> make_row(auto &&...blocks) {
 
 void InterfaceWorker::operator()(std::stop_token stop_tok) {
   Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
+
+  // plane drawing calls take shared lock, nc.render() call takes unique
+  struct TurnBasedMutex {
+    std::shared_lock<std::shared_mutex> lock_shared() {
+      permission_mtx.lock_shared();
+      std::shared_lock lock(action_mtx);
+      permission_mtx.unlock_shared();
+      return lock;
+    }
+
+    std::unique_lock<std::shared_mutex> lock_unique() {
+      permission_mtx.lock();
+      std::unique_lock lock(action_mtx);
+      permission_mtx.unlock();
+      return lock;
+    }
+
+  private:
+    std::shared_mutex permission_mtx;
+    std::shared_mutex action_mtx;
+  } render_mtx;
 
   std::shared_ptr<ncpp::Plane> std_plane(nc.get_stdplane());
 
@@ -57,31 +73,43 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         UI::Views::View::MakeView<UI::Views::SessionStatusView>();
 
     sess_status_view->set_render_callback(
-        [this](std::shared_ptr<ncpp::Plane> p, bool focused,
-               UI::Views::View &view) -> void {
-          view.as<UI::Views::SessionStatusView>().update_and_render(sess,
-                                                                    focused, p);
+        [&render_mtx, this](UI::RenderLevel render_level,
+                            std::shared_ptr<ncpp::Plane> p, bool focused,
+                            UI::Views::View &view) -> void {
+          if (render_level == UI::RenderLevel::FULL)
+            view.as<UI::Views::SessionStatusView>().update_and_render(
+                sess, focused, p);
+          else
+            view.as<UI::Views::SessionStatusView>().update_and_render(focused,
+                                                                      p);
         });
 
     event_status_view =
         UI::Views::View::MakeView<UI::Views::TrackSessionView>();
 
     event_status_view->set_render_callback(
-        [&board](std::shared_ptr<ncpp::Plane> p, bool focused,
-                 UI::Views::View &view) -> void {
+        [&board](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
+                 bool focused, UI::Views::View &view) -> void {
           assert(p != nullptr);
-          view.as<UI::Views::TrackSessionView>().update_and_render(
-              board.session_info, focused, p);
+          if (render_level == UI::RenderLevel::FULL)
+            view.as<UI::Views::TrackSessionView>().update_and_render(
+                board.session_info, focused, p);
+          else
+            view.as<UI::Views::TrackSessionView>().update_and_render(focused,
+                                                                     p);
         });
 
     leaderboard_view = UI::Views::View::MakeView<UI::Views::LeaderboardView>();
 
     leaderboard_view->set_render_callback(
-        [&board](std::shared_ptr<ncpp::Plane> p, bool focused,
-                 UI::Views::View &view) -> void {
+        [&board](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
+                 bool focused, UI::Views::View &view) -> void {
           assert(p != nullptr);
-          view.as<UI::Views::LeaderboardView>().update_and_render(
-              board.reorder_and_get(), focused, p);
+          if (render_level == UI::RenderLevel::FULL)
+            view.as<UI::Views::LeaderboardView>().update_and_render(
+                board.reorder_and_get(), focused, p);
+          else
+            view.as<UI::Views::LeaderboardView>().update_and_render(focused, p);
         });
 
     leaderboard_view->as<UI::Views::LeaderboardView>().set_columns(
@@ -109,8 +137,20 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   root_layout.solve(std_plane);
 
   // Used for allowing early renders triggered from input thread
-  std::mutex render_cv_mtx;
-  std::condition_variable_any render_cv;
+  // UI::RenderLevel render_level = UI::RenderLevel::FULL;
+  // std::mutex render_cv_mtx;
+  // std::condition_variable_any render_cv;
+
+  std::jthread render_thread =
+      std::jthread{[&render_mtx, this](std::stop_token stop_tok) {
+        while (!stop_tok.stop_requested()) {
+          std::this_thread::sleep_for(Time::Duration::UIntMilliSec(50));
+          std::unique_lock lock = render_mtx.lock_unique();
+          nc.render();
+        }
+      }};
+
+  pthread_setname_np(render_thread.native_handle(), "NC rendering");
 
   // Configure root input handler, create and configure input thread;
   Input::InputHandler root_handler{};
@@ -136,7 +176,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         .duplicate_callback(KeyWithMod('q', Modifier::NONE),
                             KeyWithMod('C', Modifier::CTRL));
 
-    auto root_input_callback = [&root_layout, &render_cv, &render_cv_mtx,
+    auto root_input_callback = [&root_layout,
                                 handler = std::move(root_handler)](
                                    Input::KeyWithMod const &k) mutable {
       // Primary input callback. Invoked in other thread, so must be
@@ -149,11 +189,12 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
       else
         handled = root_layout.take_input(k);
 
-      if (handled) {
-        Tools::Log::Debug("Triggering early render", "ROOT-INPUT");
-        std::lock_guard lock(render_cv_mtx);
-        render_cv.notify_all();
-      }
+      // if (handled) {
+      //   Tools::Log::Debug("Triggering early render", "ROOT-INPUT");
+      //   std::lock_guard lock(render_cv_mtx);
+      //   render_level = UI::RenderLevel::LIGHT;
+      //   render_cv.notify_all();
+      // }
     };
 
     // Interface worker spawns and manages input thread
@@ -174,40 +215,40 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
   Time::TimePoint last_tick = Time::Clock::now();
 
-  size_t cnt = 0;
+  [[maybe_unused]] size_t cnt = 0;
 
   App::PerfContext::Get();
 
-  while (!stop_tok.stop_requested()) {
-    auto render_start = Time::Clock::now();
-    auto block_until = render_start + MAX_REDRAW_PERIOD;
+  using Telemetry::TelemetryBoard;
+  using Telemetry::TelemetryQueue;
+
+  auto board_inform = [](Core::Session &sess, TelemetryBoard &board)
+      -> std::expected<void,
+                       std::variant<TelemetryBoard::Err, TelemetryQueue::Err>> {
+    auto queue_res = sess.next_frame();
+
+    if (!queue_res.has_value())
+      return std::unexpected(queue_res.error());
+
+    return board.inform_new_frame(std::move(queue_res.value()));
+  };
+
+  auto last_full_render = Time::Clock::now();
+  bool init_render_done = false;
+
+  // CALLGRIND_START_INSTRUMENTATION;
+  while (!stop_tok.stop_requested()) [[likely]] {
+    // CALLGRIND_TOGGLE_COLLECT;
 
     if ((cnt++ % 10) == 0) {
-      App::PerfContext::LogKeyHandleTime();
-      App::PerfContext::LogLeaderboardPopulationTime();
-      App::PerfContext::LogRenderTime();
+      // App::PerfContext::LogKeyHandleTime();
+      // App::PerfContext::LogLeaderboardPopulationTime();
+      // App::PerfContext::LogRenderTime();
+      App::PerfContext::LogInformBoardTime();
     }
 
-    if (!sess.next_frame()
-             // If next frame retrieved, hand it to the board
-             .transform(
-                 [&board](std::unique_ptr<Telemetry::TelemetryFrame> &&frame) {
-                   return board.inform_new_frame(std::move(frame));
-                 })
-             // If the board handed back an error, let it pass on as an
-             // error only if it is not one of the specified set of errors
-             .transform_error(
-                 [](Telemetry::TelemetryQueue::Err const &e)
-                     -> std::expected<void, Telemetry::TelemetryQueue::Err> {
-                   using Kind = Telemetry::TelemetryQueue::Err;
-                   if ((e.kind == Kind::DELAY_FULL) ||
-                       (e.kind == Kind::TOO_RECENT))
-                     return {};
-                   else
-                     return e;
-                 })
-             .has_value())
-      Tools::Log::Warn("Unhandled board-render failure", "MAIN-BOARD");
+    // Populate the leaderboard async
+    std::this_thread::sleep_for(Time::Duration::UIntMilliSec(10));
 
     if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Press)) {
       std::lock_guard lock(key_queue_mtx);
@@ -215,16 +256,24 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
       key_cond.notify_one();
     }
 
-    std::unique_lock lock(render_cv_mtx);
-    render_cv.wait_until(lock, block_until);
+    UI::RenderLevel render_level =
+        (!init_render_done || board_inform(sess, board).has_value() ||
+         ((Time::Clock::now() - last_full_render) >
+          Time::Duration::UIntMilliSec(100)))
+            ? UI::RenderLevel::FULL
+            : UI::RenderLevel::LIGHT;
 
-    App::PerfContext::StartRenderTime();
-    std_plane->erase();
+    init_render_done =
+        init_render_done || (render_level == UI::RenderLevel::FULL);
 
-    root_layout.render(true);
+    last_full_render = (render_level == UI::RenderLevel::FULL)
+                           ? Time::Clock::now()
+                           : last_full_render;
 
-    nc.render();
-    App::PerfContext::StopRenderTime();
+    {
+      auto lock = render_mtx.lock_shared();
+      root_layout.render(render_level, true);
+    }
 
     // Possible optimization: use built in notcurses resize_cb
     // functionality and avoid this global check
@@ -234,7 +283,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     // Note: For some reason if this is pre-render it doesn't work?
     if ((std_plane->get_dim_y() != pre_dim_y) ||
-        (std_plane->get_dim_x() != pre_dim_x)) {
+        (std_plane->get_dim_x() != pre_dim_x)) [[unlikely]] {
       root_layout.solve(std_plane);
     }
 
@@ -244,6 +293,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   }
 
   input_thread.request_stop();
+  render_thread.request_stop();
 
   Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
 }
