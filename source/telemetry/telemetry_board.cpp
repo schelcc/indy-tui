@@ -107,48 +107,29 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   std::unique_lock vec_lock(_driver_vec_mtx);
 
   App::PerfContext::StartInformBoardTime();
-  if (message.telemetrymessages_size() > 0) {
-    // Increment the stale count on all drivers, then we'll reset the ones we
-    // come accross (only if we got any telemetry)
-    std::for_each(std::begin(_drivers), std::end(_drivers),
-                  [](DriverTelemetry &d) { d.frame_passed(); });
 
-    std::for_each(message.mutable_telemetrymessages()->begin(),
-                  message.mutable_telemetrymessages()->end(),
-                  [this, &check_and_populate](auto iter) {
-                    assert(check_and_populate(iter));
-
-                    DriverTelemetry &driver =
-                        _drivers.at(_driver_map.at(iter.carnumber()));
-
-                    driver.take_new_telemetry(std::move(iter));
-                  });
-  }
+  auto mut_telem = message.mutable_telemetrymessages();
+  for (auto iter = mut_telem->begin(); iter < mut_telem->end(); ++iter)
+    check_and_populate(iter, _driver_map, _drivers, session_info)
+        ->take_new_telemetry(std::move(*iter));
 
   // Populate the driver table with the overall results, if included
-  std::for_each(message.mutable_overallresults()->begin(),
-                message.mutable_overallresults()->end(),
-                [this, &check_and_populate](auto iter) {
-                  assert(check_and_populate(iter));
-
-                  _drivers.at(_driver_map.at(iter.carnumber()))
-                      .take_new_results(std::move(iter));
-                });
+  auto mut_overall = message.mutable_overallresults();
+  for (auto iter = mut_overall->begin(); iter < mut_overall->end(); ++iter)
+    check_and_populate(iter, _driver_map, _drivers, session_info)
+        ->take_new_results(std::move(*iter));
 
   // Populate the driver table with the completed lap information, if included
-  std::for_each(message.mutable_completedlapresult()->begin(),
-                message.mutable_completedlapresult()->end(),
-                [this, &check_and_populate](auto iter) {
-                  assert(check_and_populate(iter));
-
-                  _drivers.at(_driver_map.at(iter.carnumber()))
-                      .take_new_lap(std::move(iter));
-                });
+  auto mut_lap = message.mutable_completedlapresult();
+  for (auto iter = mut_lap->begin(); iter < mut_lap->end(); ++iter)
+    check_and_populate(iter, _driver_map, _drivers, session_info)
+        ->take_new_lap(std::move(*iter));
 
   // Driver objects complete each-lap updates here to keep as much out of the
   // above loops as possible
-  std::for_each(std::execution::par_unseq, std::begin(_drivers),
-                std::end(_drivers), [](auto &d) { d.refresh(); });
+  for (auto &d : _drivers)
+    d.refresh();
+
   App::PerfContext::StopInformBoardTime();
 
   return {};
@@ -169,7 +150,7 @@ TelemetryBoard::reorder_and_get() {
   // Calculate each driver's gap to leader
   {
     std::unique_lock lock(_driver_vec_mtx);
-    if (_drivers.size() >= 2) {
+    if (_drivers.size() >= 2) [[likely]] {
       auto &leader = _drivers.front();
       size_t prev_idx = 0;
       std::for_each(std::begin(_drivers) + 1, std::end(_drivers),
