@@ -1,9 +1,9 @@
 #include "ErpMessage.pb.h"
+#include "app_context.hpp"
 #include "base64.hpp"
 #include "ixwebsocket/IXConnectionState.h"
 #include "ixwebsocket/IXWebSocketMessage.h"
 #include "ixwebsocket/IXWebSocketMessageType.h"
-#include "tools/logger.hpp"
 #include <chrono>
 #include <fstream>
 #include <ixwebsocket/IXNetSystem.h>
@@ -16,7 +16,7 @@
 
 int main() {
   // https://machinezone.github.io/IXWebSocket/usage/#websocket-server-api
-  Tools::Log::SetOut("indyreplay.log");
+  App::AppContext::Log().set_level(spdlog::level::debug);
 
   int port = 8080;
   std::string_view host{"127.0.0.1"};
@@ -30,8 +30,6 @@ int main() {
   std::fstream sample{session_file.data()};
 
   proto::telemetry::ErpMessage telem_msg{};
-
-  Tools::Log::SetLevel(Tools::Log::DEBUG);
 
   server.setOnClientMessageCallback(
       [&](std::shared_ptr<ix::ConnectionState> connectionState,
@@ -57,8 +55,8 @@ int main() {
 
               if (telem_msg.heartbeats_size() > 0) {
                 auto &hbts_0th = telem_msg.heartbeats().Get(0);
-                Tools::Log::Debug(
-                    std::format("Time of day: {}", hbts_0th.timeofday()));
+                App::AppContext::Log().debug("Time of day: {}",
+                                             hbts_0th.timeofday());
               }
 
               std::this_thread::sleep_for(msg_delay);
@@ -76,7 +74,7 @@ int main() {
       });
 
   auto res = server.listen();
-  Tools::Log::Debug("Listening");
+  App::AppContext::Log().debug("Listening");
   std::println("Listening");
   if (!res.first)
     return -1;

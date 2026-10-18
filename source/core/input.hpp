@@ -1,18 +1,15 @@
 #pragma once
 
-#include "core.hpp"
-#include "locked.hpp"
-#include "logger.hpp"
-#include "perf.hpp"
-#include "time.hpp"
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <notcurses/notcurses.h>
-#include <optional>
 #include <type_traits>
 #include <unordered_map>
+
+#include "core/time.hpp"
+
+#include "tools/perf.hpp"
 
 namespace Input {
 

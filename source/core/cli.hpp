@@ -1,21 +1,17 @@
 #pragma once
 
 #include <any>
+#include <cassert>
 #include <concepts>
 #include <format>
 #include <functional>
-#include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
-
-#include "core.hpp"
-#include "tools/logger.hpp"
 
 namespace CLI {
 

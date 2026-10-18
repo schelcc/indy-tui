@@ -2,12 +2,13 @@
 #include <ncpp/Plane.hh>
 #include <string>
 
-#include "draw.hpp"
-#include "string.hpp"
+#include "tools/draw.hpp"
+
 #include "telemetry/telemetry_board.hpp"
 
+#include "ui/string.hpp"
 #include "ui/views.hpp"
-#include "widget.hpp"
+#include "ui/widget.hpp"
 
 static constexpr std::array<UI::Color, 5> FLAG_TO_COLOR = {
     UI::Color::PURPLE_SOFT, UI::Color::YELLOW_SOFT, UI::Color::GREEN_SOFT,

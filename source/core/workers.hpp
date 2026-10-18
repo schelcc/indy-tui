@@ -16,9 +16,10 @@
 #include <ixwebsocket/IXWebSocketServer.h>
 #include <ncpp/NotCurses.hh>
 
+#include "core/input.hpp"
 #include "core/session.hpp"
 #include "core/time.hpp"
-#include "input.hpp"
+
 #include "tools/strings.hpp"
 
 namespace Workers {

@@ -1,5 +1,6 @@
-#include "ui/widget.hpp"
 #include <mutex>
+
+#include "ui/widget.hpp"
 
 namespace UI {
 

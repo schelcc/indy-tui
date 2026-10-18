@@ -1,13 +1,12 @@
-#include "telemetry/telemetry_queue.hpp"
-#include "base64.hpp"
-#include "logger.hpp"
-#include "telemetry/telemetry_frame.hpp"
-#include "time.hpp"
-#include <csignal>
 #include <cstddef>
 
-using Tools::LoggedSharedLock;
-using Tools::LoggedUniqueLock;
+#include "core/app_context.hpp"
+#include "core/time.hpp"
+
+#include "telemetry/telemetry_frame.hpp"
+#include "telemetry/telemetry_queue.hpp"
+
+#include "tools/base64.hpp"
 
 using Time::Clock;
 using namespace Time::Duration;
@@ -114,7 +113,7 @@ TelemetryQueue::enqueue(std::string_view const payload) noexcept {
                ? std::expected<void, TelemetryQueue::Err>{}
                : std::unexpected(Err{Err::FRAME_INVALID});
   } else {
-    Tools::Log::Debug2("Enqueue skipped, delay is full", "TELEM-QUEUE");
+    App::AppContext::Log().trace("Enqueue skipped, delay full");
     return std::unexpected(Err{Err::DELAY_FULL});
   }
 }
@@ -138,7 +137,7 @@ TelemetryQueue::dequeue() noexcept {
 
     return std::move(cur_frame.frame);
   } else {
-    Tools::Log::Debug2("Dequeue skipped, delay is not ready", "TELEM-QUEUE");
+    App::AppContext::Log().trace("Dequeue skipped, delay full");
     return std::unexpected(Err{Err::TOO_RECENT});
   }
 }

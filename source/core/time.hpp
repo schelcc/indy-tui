@@ -1,8 +1,10 @@
 #pragma once
 
-#include "core.hpp"
 #include <cassert>
 #include <chrono>
+
+#include "core/core.hpp"
+
 namespace Time {
 
 using Clock = std::chrono::steady_clock;

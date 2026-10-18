@@ -1,4 +1,3 @@
-#include <chrono>
 #include <concepts>
 #include <memory>
 #include <semaphore>
@@ -9,21 +8,23 @@ namespace Tools {
 
 /** @brief Simple timed worker which releases a binary semaphore every period of
  * its configured duration. */
+template <typename D>
+  requires requires(D d) {
+    std::atomic<D>(d);
+    std::this_thread::sleep_for(d);
+  }
 class Timer {
   std::shared_ptr<std::binary_semaphore> _release;
   std::shared_ptr<std::binary_semaphore> _stagger;
 
   std::binary_semaphore _start{0};
 
-  using duration_t = std::chrono::duration<size_t, std::ratio<1, 1000>>;
-  std::atomic<duration_t> _duration;
+  std::atomic<D> _duration;
 
   std::jthread _thread;
 
 public:
-  Timer(std::shared_ptr<std::binary_semaphore> release,
-        std::chrono::duration<size_t, std::ratio<1, 1000>> duration =
-            std::chrono::milliseconds(1000))
+  Timer(std::shared_ptr<std::binary_semaphore> release, D const duration)
       : _release(release), _duration(duration) {
     _thread = std::jthread{[this](std::stop_token stop_tok) {
       // Block for start signal
@@ -37,9 +38,7 @@ public:
     }};
   }
   Timer(std::shared_ptr<std::binary_semaphore> release,
-        std::shared_ptr<std::binary_semaphore> stagger,
-        std::chrono::duration<size_t, std::ratio<1, 1000>> duration =
-            std::chrono::milliseconds(1000))
+        std::shared_ptr<std::binary_semaphore> stagger, D duration)
       : _release(release), _stagger(stagger), _duration(duration) {
     _thread = std::jthread{[this](std::stop_token stop_tok) {
       // Block for start signal
@@ -62,7 +61,7 @@ public:
   void stop() noexcept { _thread.request_stop(); }
 
   /** @brief Change the timer's period. Thread safe. */
-  void set_period(std::convertible_to<duration_t> auto const period) {
+  void set_period(std::convertible_to<D> auto const period) {
     _duration.load(period);
   }
 };

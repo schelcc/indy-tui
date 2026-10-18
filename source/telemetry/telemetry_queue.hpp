@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "core/time.hpp"
+
 #include "telemetry/telemetry_frame.hpp"
 
 namespace Telemetry {

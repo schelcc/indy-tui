@@ -26,8 +26,8 @@ public:
   {
     _enq_sem.acquire();
     _size++;
-    _queue.at(_enq_idx) = std::move(t);
-    _enq_idx.store(++_enq_idx % Size);
+    _queue.at(_enq_idx.fetch_add(1) % Size) = std::move(t);
+    // _enq_idx.store(++_enq_idx % Size);
     _deq_sem.release();
   }
 
@@ -36,7 +36,7 @@ public:
     --_size;
     _deq_sem.acquire();
     auto output = std::move(_queue.at(_deq_idx));
-    _deq_idx.store(++_deq_idx % Size);
+    // _deq_idx.store(++_deq_idx % Size);
     _enq_sem.release();
     return output;
   }
@@ -46,8 +46,8 @@ public:
 
     if (_deq_sem.try_acquire()) {
       --_size;
-      output = std::move(_queue.at(_deq_idx));
-      _deq_idx.store(++_deq_idx % Size);
+      output.emplace(std::move(_queue.at(_deq_idx.fetch_add(1) % Size)));
+      // _deq_idx.store(++_deq_idx % Size);
       _enq_sem.release();
     }
 
@@ -61,8 +61,9 @@ public:
 
     if (_deq_sem.try_acquire_for(std::forward<decltype(d)>(d))) {
       --_size;
-      output.emplace(std::move(_queue.at(_deq_idx)));
-      _deq_idx.store(++_deq_idx % Size);
+      // output.emplace(std::move(_queue.at(_deq_idx)));
+      output.emplace(std::move(_queue.at(_deq_idx.fetch_add(1) % Size)));
+      // _deq_idx.store(++_deq_idx % Size);
       _enq_sem.release();
     }
 
@@ -76,8 +77,8 @@ public:
 
     if (_deq_sem.try_acquire_until(std::forward<decltype(d)>(d))) {
       --_size;
-      output.emplace(std::move(_queue.at(_deq_idx)));
-      _deq_idx.store(++_deq_idx % Size);
+      output.emplace(std::move(_queue.at(_deq_idx.fetch_add(1) % Size)));
+      // _deq_idx.store(++_deq_idx % Size);
       _enq_sem.release();
     }
 

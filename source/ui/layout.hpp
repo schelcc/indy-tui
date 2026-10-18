@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cassert>
 #include <memory>
 #include <mutex>
@@ -9,10 +8,12 @@
 
 #include <ncpp/Plane.hh>
 
-#include "input.hpp"
-#include "locked.hpp"
-#include "types.hpp"
-#include "views.hpp"
+#include "core/input.hpp"
+
+#include "tools/locked.hpp"
+
+#include "ui/types.hpp"
+#include "ui/views.hpp"
 
 namespace UI {
 enum class FocusDirection { NEXT, PREV };

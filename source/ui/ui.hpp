@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ncpp/CellStyle.hh"
 #include <cstdint>
 #include <memory>
 #include <ncpp/CellStyle.hh>

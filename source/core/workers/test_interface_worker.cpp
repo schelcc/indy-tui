@@ -1,16 +1,16 @@
 
 #include <memory>
 
+#include "core/app_context.hpp"
+#include "core/time.hpp"
 #include "core/workers.hpp"
 
-#include "core/time.hpp"
-#include "tools/logger.hpp"
 #include "ui/widget.hpp"
 
 namespace Workers {
 
 void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
-  Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
+  App::AppContext::Log().debug("Started leaderboard worker");
 
   std::shared_ptr<ncpp::Plane> std_plane(nc.get_stdplane());
 
@@ -59,7 +59,7 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
     cnt++;
   }
 
-  Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
+  App::AppContext::Log().debug("Exiting leaderboard loop");
   nc.stop();
 }
 

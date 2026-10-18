@@ -1,12 +1,13 @@
-#include "ui/layout.hpp"
-#include "input.hpp"
-#include "types.hpp"
-#include "widget.hpp"
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <span>
 #include <variant>
+
+#include "core/input.hpp"
+
+#include "ui/layout.hpp"
+#include "ui/types.hpp"
 
 namespace Layout {
 

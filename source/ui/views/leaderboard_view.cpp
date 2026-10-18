@@ -1,18 +1,19 @@
-#include "draw.hpp"
-#include "driver_telemetry.hpp"
-#include "input.hpp"
-#include "locked.hpp"
-#include "logger.hpp"
-#include "perf.hpp"
-#include "ui/views.hpp"
-#include "widget.hpp"
 #include <cstddef>
-#include <execution>
 #include <future>
 #include <iterator>
-#include <limits>
 #include <notcurses/nckeys.h>
 #include <ranges>
+
+#include "tools/draw.hpp"
+#include "tools/locked.hpp"
+#include "tools/perf.hpp"
+
+#include "telemetry/driver_telemetry.hpp"
+
+#include "core/input.hpp"
+
+#include "ui/views.hpp"
+#include "ui/widget.hpp"
 
 using ThreadSafe::LockPair;
 

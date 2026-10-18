@@ -2,19 +2,17 @@
 #include <optional>
 #include <string_view>
 
+#include "ixwebsocket/IXWebSocket.h"
+#include "ixwebsocket/IXWebSocketMessage.h"
+
 #include "core/app_context.hpp"
 #include "core/session.hpp"
 #include "core/time.hpp"
 
 #include "tools/appsync_resolver.hpp"
-#include "tools/logger.hpp"
 
-#include "ixwebsocket/IXWebSocket.h"
-#include "ixwebsocket/IXWebSocketMessage.h"
 #include "telemetry/telemetry_frame.hpp"
 #include "telemetry/telemetry_queue.hpp"
-
-using Tools::Log;
 
 /** @brief Locate and return the payload contained in the received message, if
  * available. */
@@ -45,7 +43,7 @@ Session::get_delay_sec() const noexcept {
 
 void Session::set_delay_sec(size_t const delay_s) noexcept {
   if (!_queue.set_delay_sec(delay_s).has_value())
-    Log::Warn(std::format("Attemped invalid delay setting {}", delay_s));
+    App::AppContext::Log().warn("Attemped invalid delay setting {}", delay_s);
 }
 
 std::expected<std::unique_ptr<Telemetry::TelemetryFrame>,
@@ -58,7 +56,7 @@ void Session::set_callbacks(Session::Status const new_status,
                             std::shared_ptr<ix::WebSocket> socket) {
   status = new_status;
   if (status == Status::INITIATING && _source != SessionSource::SERVED_DEBUG) {
-    Log::Debug("Set callbacks to initiation configuration", "SESS-SOCKET");
+    App::AppContext::Log().debug("Set callbacks to initiation configuration");
     socket->setOnMessageCallback([this](const ix::WebSocketMessagePtr &msg) {
       switch (msg->type) {
         using Type = ix::WebSocketMessageType;
@@ -69,39 +67,39 @@ void Session::set_callbacks(Session::Status const new_status,
         on_open(msg);
         break;
       case ix::WebSocketMessageType::Close: {
-        Log::Info("Session closed by server", "SESS-SOCKET");
+        App::AppContext::Log().info("Session closed by server");
         App::AppContext::Shutdown("Websocket session closed by server");
         // kill(0, SIGINT);
         break;
       }
       case ix::WebSocketMessageType::Error: {
-        Log::Warn("Unhandled message type 'error' received", "SESS-SOCKET");
-        Log::Debug(std::format("DecompressionError: '{}'",
-                               msg->errorInfo.decompressionError),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("HTTPStatus: '{}'", msg->errorInfo.http_status),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("Reason: '{}'", msg->errorInfo.reason),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("Retries: '{}'", msg->errorInfo.retries),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("WaitTime: '{}'", msg->errorInfo.wait_time),
-                   "SESS-SOCKET-ERR_RECV");
+        App::AppContext::Log().debug("Unhandled message type 'error' received");
+
+        auto &e = msg->errorInfo;
+
+        App::AppContext::Log().debug("(WS Err) DecompressionError: '{}'",
+                                     e.decompressionError);
+        App::AppContext::Log().debug("(WS Err) HTTPStatus: '{}'",
+                                     e.http_status);
+        App::AppContext::Log().debug("(WS Err) Reason: '{}'", e.reason);
+        App::AppContext::Log().debug("(WS Err) Retries: '{}'", e.retries);
+        App::AppContext::Log().debug("(WS Err) WaitTime: '{}'", e.wait_time);
         break;
       }
       case ix::WebSocketMessageType::Ping:
-        Log::Warn("Unhandled message type 'ping' received", "SESS-SOCKET");
+        App::AppContext::Log().warn("Unhandled message type 'ping' received");
         break;
       case ix::WebSocketMessageType::Pong:
-        Log::Warn("Unhandled message type 'pong' received", "SESS-SOCKET");
+        App::AppContext::Log().warn("Unhandled message type 'pong' received");
         break;
       case ix::WebSocketMessageType::Fragment:
-        Log::Warn("Unhandled message type 'fragment' received", "SESS-SOCKET");
+        App::AppContext::Log().warn(
+            "Unhandled message type 'fragment' received");
         break;
       }
     });
   } else {
-    Log::Debug("Set callbacks to started configuration", "SESS-SOCKET");
+    App::AppContext::Log().debug("Set callbacks to started configuration");
     socket->setOnMessageCallback([this](const ix::WebSocketMessagePtr &msg) {
       switch (msg->type) {
         using Type = ix::WebSocketMessageType;
@@ -112,34 +110,33 @@ void Session::set_callbacks(Session::Status const new_status,
         on_open(msg);
         break;
       case ix::WebSocketMessageType::Close: {
-        Log::Info("Session closed by server", "SESS-SOCKET");
+        App::AppContext::Log().info("Session closed by server");
         App::AppContext::Shutdown("Websocket session closed by server");
-        // kill(0, SIGINT);
         break;
       }
       case ix::WebSocketMessageType::Error: {
-        Log::Warn("Unhandled message type 'error' received", "SESS-SOCKET");
-        Log::Debug(std::format("DecompressionError: '{}'",
-                               msg->errorInfo.decompressionError),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("HTTPStatus: '{}'", msg->errorInfo.http_status),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("Reason: '{}'", msg->errorInfo.reason),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("Retries: '{}'", msg->errorInfo.retries),
-                   "SESS-SOCKET-ERR_RECV");
-        Log::Debug(std::format("WaitTime: '{}'", msg->errorInfo.wait_time),
-                   "SESS-SOCKET-ERR_RECV");
+        App::AppContext::Log().debug("Unhandled message type 'error' received");
+
+        auto &e = msg->errorInfo;
+
+        App::AppContext::Log().debug("(WS Err) DecompressionError: '{}'",
+                                     e.decompressionError);
+        App::AppContext::Log().debug("(WS Err) HTTPStatus: '{}'",
+                                     e.http_status);
+        App::AppContext::Log().debug("(WS Err) Reason: '{}'", e.reason);
+        App::AppContext::Log().debug("(WS Err) Retries: '{}'", e.retries);
+        App::AppContext::Log().debug("(WS Err) WaitTime: '{}'", e.wait_time);
         break;
       }
       case ix::WebSocketMessageType::Ping:
-        Log::Warn("Unhandled message type 'ping' received", "SESS-SOCKET");
+        App::AppContext::Log().warn("Unhandled message type 'ping' received");
         break;
       case ix::WebSocketMessageType::Pong:
-        Log::Warn("Unhandled message type 'pong' received", "SESS-SOCKET");
+        App::AppContext::Log().warn("Unhandled message type 'pong' received");
         break;
       case ix::WebSocketMessageType::Fragment:
-        Log::Warn("Unhandled message type 'fragment' received", "SESS-SOCKET");
+        App::AppContext::Log().warn(
+            "Unhandled message type 'fragment' received");
         break;
       }
     });
@@ -168,8 +165,7 @@ std::expected<void, Session::Err> Session::start_session() noexcept {
       return;
     }
 
-    Log::Debug(std::format("WebSocket URL: {}", _socket->getUrl()),
-               "SESS-SOCKET");
+    App::AppContext::Log().debug("WebSocket URL: {}", _socket->getUrl());
 
     _socket->addSubProtocol("graphql-ws");
 
@@ -178,12 +174,12 @@ std::expected<void, Session::Err> Session::start_session() noexcept {
     if (_source == SessionSource::SERVED_DEBUG)
       _start_latch.count_down();
 
-    Log::Debug("Starting websocket server", "SESS-SOCKET");
+    App::AppContext::Log().debug("Starting websocket server");
     _socket->start();
 
     _stop_latch.wait();
 
-    Log::Debug("Stopping websocket server", "SESS-SOCKET");
+    App::AppContext::Log().debug("Stopping websocket server");
     _socket->stop();
     _socket->close();
   }});
@@ -198,12 +194,13 @@ void Session::end_session() noexcept {
   _stop_latch.count_down();
 
   // Destructing all threads will call .join() on them
-  Log::Debug("Joining all threads and waiting for conclusion", "SESS");
+  App::AppContext::Log().debug(
+      "Joining all threads and waiting for conclusion");
   _threads.clear();
 }
 
 void Session::on_open(const ix::WebSocketMessagePtr &) {
-  Log::Debug("Recv. open message", "SESS-SOCKET");
+  App::AppContext::Log().debug("Recv. open message");
 
   if (_source == SessionSource::SERVED_REMOTE) {
     _socket->send(Tools::AppSyncSession::CONN_INIT.data());
@@ -212,10 +209,10 @@ void Session::on_open(const ix::WebSocketMessagePtr &) {
 
 void Session::init_on_message(const ix::WebSocketMessagePtr &msg) {
   if (msg->str.contains(R"("ka")")) {
-    Log::Debug("Received initial keep-alive", "SESS-SOCKET");
+    App::AppContext::Log().debug("Received initial keep-alive");
     _socket->send(_appsync_session->get_registration_body());
   } else if (msg->str.contains(R"("start_ack")")) {
-    Log::Debug("Received start ack, starting now...", "SESS-SOCKET");
+    App::AppContext::Log().debug("Received start ack, starting now...");
 
     // Set the first message recv timestamp
     last_msg_time = Time::Clock::now();
@@ -239,13 +236,13 @@ void Session::on_message(const ix::WebSocketMessagePtr &msg) {
 
   auto payload = parse_payload(msg->str);
   if (!payload.has_value())
-    Log::Warn("Bad payload received", "SESS-ENQ");
+    App::AppContext::Log().warn("Bad payload received");
   else {
     auto res = _queue.enqueue(payload.value());
 
     if (!res.has_value() &&
         (res.error().kind != Telemetry::TelemetryQueue::Err::DELAY_FULL))
-      Log::Warn("Unhandled enqueue error!", "SESS-ENQ");
+      App::AppContext::Log().warn("Unhandled enqueue error");
   }
 };
 

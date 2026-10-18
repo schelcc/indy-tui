@@ -9,14 +9,16 @@
 #include <thread>
 #include <vector>
 
-#include "appsync_resolver.hpp"
 #include "ixwebsocket/IXWebSocket.h"
 #include "ixwebsocket/IXWebSocketMessage.h"
-#include "telemetry/driver_telemetry.hpp"
+
+#include "core/time.hpp"
+
+#include "tools/appsync_resolver.hpp"
+
 #include "telemetry/telemetry_board.hpp"
 #include "telemetry/telemetry_frame.hpp"
 #include "telemetry/telemetry_queue.hpp"
-#include "time.hpp"
 
 namespace Core {
 

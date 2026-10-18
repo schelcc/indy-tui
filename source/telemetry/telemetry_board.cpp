@@ -14,15 +14,17 @@
 #include <string>
 #include <string_view>
 
-#include "locked.hpp"
-#include "perf.hpp"
+#include "core/time.hpp"
+#include "core/units.hpp"
+
+#include "tools/locked.hpp"
+#include "tools/perf.hpp"
+
 #include "telemetry/driver_telemetry.hpp"
 #include "telemetry/telemetry_board.hpp"
 #include "telemetry/telemetry_frame.hpp"
 
 #include "ErpMessage.pb.h"
-#include "core/time.hpp"
-#include "core/units.hpp"
 
 using proto::telemetry::ErpMessage;
 

@@ -10,9 +10,8 @@
 #include <vector>
 
 #include "ErpMessage.pb.h"
-#include "locked.hpp"
 
-#include <ncpp/Plane.hh>
+#include "tools/locked.hpp"
 
 namespace Telemetry {
 

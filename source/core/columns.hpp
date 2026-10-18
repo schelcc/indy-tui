@@ -1,18 +1,15 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
-
 #include <ncpp/Palette.hh>
 #include <ncpp/Plane.hh>
-#include <shared_mutex>
 #include <type_traits>
 
 #include "telemetry/driver_telemetry.hpp"
-#include "telemetry_board.hpp"
+#include "telemetry/telemetry_board.hpp"
+
 #include "tools/draw.hpp"
+
 #include "ui/string.hpp"
-#include "ui/ui.hpp"
 
 namespace Columns {
 

@@ -1,17 +1,13 @@
 #include <algorithm>
 #include <cassert>
-#include <functional>
 #include <iterator>
 #include <mutex>
-#include <ranges>
 
 #include <ncpp/Plane.hh>
 #include <stdexcept>
-#include <type_traits>
 
-#include "locked.hpp"
-#include "perf.hpp"
-#include "ui.hpp"
+#include "tools/locked.hpp"
+
 #include "ui/string.hpp"
 #include "ui/widget.hpp"
 

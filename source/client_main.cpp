@@ -4,10 +4,12 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <print>
 #include <pthread.h>
 #include <queue>
+#include <spdlog/common.h>
 #include <string>
 #include <thread>
 #include <vector>
@@ -25,12 +27,10 @@
 #include "core/session.hpp"
 #include "core/workers.hpp"
 
-#include "input.hpp"
-#include "tools/logger.hpp"
+#include "core/input.hpp"
 
 int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
-  Tools::Log::SetOut("indycpp.log");
-  Tools::Log::SetLevel(Tools::Log::NONE);
+  App::AppContext::Log().set_level(spdlog::level::info);
 
   using namespace CLI;
 
@@ -140,29 +140,28 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
       .set_long_opt("url")
       .set_short_opt("u");
 
-  parser.add_element<Option>("log output")
-      .set_help_msg("Where the log will be written to, if logging is enabled")
-      .set_long_opt("log-out")
-      .set_default_input("indy-tui.log")
-      .set_handler([](std::string_view const s) { return s; });
+  // parser.add_element<Option>("log output")
+  //     .set_help_msg("Where the log will be written to, if logging is
+  //     enabled") .set_long_opt("log-out") .set_default_input("indy-tui.log")
+  //     .set_handler([](std::string_view const s) { return s; });
 
   parser.add_element<Option>("log level")
       .set_help_msg(
           "What level of information to include in the logging, if "
-          "enabled. Options are 'none', 'warn' 'info', 'debug', 'debug2'.")
+          "enabled. Options are 'none', 'warn' 'info', 'debug', 'trace'.")
       .set_long_opt("log-level")
       .set_default_input("info")
-      .set_handler([](std::string_view const s) -> Tools::Log::Level {
+      .set_handler([](std::string_view const s) -> spdlog::level::level_enum {
         if (s == "none")
-          return Tools::Log::NONE;
+          return spdlog::level::off;
         else if (s == "warn")
-          return Tools::Log::WARN;
+          return spdlog::level::warn;
         else if (s == "info")
-          return Tools::Log::INFO;
+          return spdlog::level::info;
         else if (s == "debug")
-          return Tools::Log::DEBUG;
-        else if (s == "debug2")
-          return Tools::Log::DEBUG2;
+          return spdlog::level::debug;
+        else if (s == "trace")
+          return spdlog::level::trace;
         else
           throw CLI::InputParsingErr(
               std::format("Invalid input for log level: '{}'", s));
@@ -187,8 +186,8 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  Tools::Log::SetOut(parser.get<Option, std::string_view>("log output"));
-  Tools::Log::SetLevel(parser.get<Option, Tools::Log::Level>("log level"));
+  App::AppContext::Log().set_level(
+      parser.get<Option, spdlog::level::level_enum>("log level"));
 
   if (parser.get<Flag, bool>("display demo")) {
     // Will not return to main from here. Set up a minimum runtime context with
@@ -208,11 +207,10 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     pthread_setname_np(input_thread.native_handle(), "Input");
 
     App::AppContext::AwaitShutdown();
-    Tools::Log::Info(
-        std::format("Shutdown requested for reason '{}'",
-                    App::AppContext::GetReason().value_or(
-                        "no reason provided -- ungraceful shutdown")),
-        "MAIN");
+    App::AppContext::Log().info(
+        "Shutdown requested for reason '{}'",
+        App::AppContext::GetReason().value_or(
+            "no reason provided -- ungraceful shutdown"));
 
     input_thread.request_stop();
     output_thread.request_stop();
@@ -220,8 +218,7 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     input_thread.join();
     output_thread.join();
 
-    Tools::Log::Info("Exiting (graceful)...");
-    std::println("Done.");
+    App::AppContext::Log().info("Exiting");
     return EXIT_SUCCESS;
   }
 
@@ -272,11 +269,9 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   pthread_setname_np(output_thread.native_handle(), "Display");
 
   App::AppContext::AwaitShutdown();
-  Tools::Log::Info(
-      std::format("Shutdown requested for reason '{}'",
-                  App::AppContext::GetReason().value_or(
-                      "no reason provided -- ungraceful shutdown")),
-      "MAIN");
+  App::AppContext::Log().info("Shutdown requested for reason '{}'",
+                              App::AppContext::GetReason().value_or(
+                                  "no reason provided -- ungraceful shutdown"));
 
   output_thread.request_stop();
 
@@ -286,6 +281,5 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   nc.stop();
 
-  Tools::Log::Info("Exiting (graceful)...");
-  std::println("Done.");
+  App::AppContext::Log().info("Exiting");
 }

@@ -7,18 +7,19 @@
 #include <variant>
 #include <vector>
 
-// #include "core/input.hpp"
-#include "core.hpp"
-#include "core/session.hpp"
-
 #include "driver_telemetry.hpp"
 #include "google/protobuf/repeated_ptr_field.h"
-#include "input.hpp"
-#include "locked.hpp"
-#include "string.hpp"
+
+#include "core/core.hpp"
+#include "core/input.hpp"
+#include "core/session.hpp"
+
 #include "telemetry/telemetry_board.hpp"
 
-#include "types.hpp"
+#include "tools/locked.hpp"
+
+#include "ui/string.hpp"
+#include "ui/types.hpp"
 #include "ui/widget.hpp"
 
 namespace UI::Views {

@@ -1,8 +1,15 @@
 #pragma once
 #include <atomic>
+#include <chrono>
+#include <format>
 #include <latch>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <print>
+#include <spdlog/logger.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <string>
 #include <string_view>
 
 namespace App {
@@ -22,13 +29,29 @@ class AppContext {
   std::mutex _reason_mtx;
   std::optional<std::string_view> _reason;
 
+  const std::string _instance_name{std::format(
+      "{:%F_%X}", std::chrono::zoned_time{std::chrono::current_zone(),
+                                          std::chrono::system_clock::now()})};
+
+  std::shared_ptr<spdlog::logger> _logger;
+
   /** @brief Retrieve access to the static AppContext instance. */
   static AppContext &Get() {
     static AppContext app{};
     return app;
   }
 
-  AppContext() = default;
+  AppContext() {
+    try {
+      _logger =
+          spdlog::basic_logger_mt("logger", "logs/" + _instance_name + ".log");
+      _logger->set_pattern("[%H:%M:%S:%e] [%L] [t #%t] %v");
+    } catch (const spdlog::spdlog_ex &ex) {
+      std::println("Log init failed: {}", ex.what());
+      std::terminate();
+    }
+  }
+
   ~AppContext() = default;
 
 public:
@@ -37,6 +60,12 @@ public:
   AppContext &operator=(const AppContext &) = delete;
   AppContext(AppContext &&) = delete;
   AppContext &operator=(AppContext &&) = delete;
+
+  /** @brief Retrieve this instance's name (date and time, local TZ). */
+  static std::string_view InstanceName() { return Get()._instance_name; }
+
+  /** @brief Retrieve this instance's logger. */
+  static spdlog::logger &Log() { return *Get()._logger; }
 
   /** @brief Block the current thread until shutdown is initiated. */
   static void AwaitShutdown() { Get()._shutdown_latch.wait(); }

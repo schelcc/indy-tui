@@ -1,6 +1,4 @@
-#include <atomic>
 #include <mutex>
-#include <vector>
 
 #include <ncpp/NotCurses.hh>
 
@@ -8,8 +6,6 @@
 #include "core/workers.hpp"
 
 #include "core/app_context.hpp"
-#include "core/core.hpp"
-#include "core/session.hpp"
 
 enum AllowedModifier {
   NONE,
@@ -52,7 +48,7 @@ bool key_char_is(const wchar_t key, const ncinput *ni, const Ts... mods) {
 namespace Workers {
 
 void KeyWorker::operator()(std::stop_token stop_tok) {
-  Tools::Log::Debug("Started key worker", "WORKER-INPUT");
+  App::AppContext::Log().debug("Started key worker");
 
   nc.linesigs_disable();
 
@@ -70,7 +66,7 @@ void KeyWorker::operator()(std::stop_token stop_tok) {
 }
 
 void TestKeyWorker::operator()(std::stop_token stop_tok) {
-  Tools::Log::Debug("Started test-key worker", "WORKER-INPUT");
+  App::AppContext::Log().debug("Started test-key worker");
 
   nc.linesigs_disable();
 

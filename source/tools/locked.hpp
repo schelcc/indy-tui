@@ -1,11 +1,12 @@
 #pragma once
 
-#include "core.hpp"
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <type_traits>
 #include <variant>
+
+#include "core.hpp"
 
 namespace ThreadSafe {
 

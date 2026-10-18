@@ -1,5 +1,4 @@
 #include <condition_variable>
-#include <initializer_list>
 #include <memory>
 #include <ncpp/NCKey.hh>
 #include <notcurses/nckeys.h>
@@ -7,21 +6,20 @@
 #include <pthread.h>
 #include <stop_token>
 
-#include "app_context.hpp"
-#include "columns.hpp"
+#include "core/app_context.hpp"
+#include "core/columns.hpp"
+#include "core/input.hpp"
+#include "core/session.hpp"
+#include "core/time.hpp"
 #include "core/workers.hpp"
 
-#include "core/time.hpp"
-#include "input.hpp"
-#include "perf.hpp"
-#include "session.hpp"
-#include "telemetry_board.hpp"
-#include "telemetry_queue.hpp"
-#include "tools/logger.hpp"
-#include "types.hpp"
+#include "telemetry/telemetry_board.hpp"
+#include "telemetry/telemetry_queue.hpp"
+
 #include "ui/layout.hpp"
-#include "views.hpp"
-#include "widget.hpp"
+#include "ui/types.hpp"
+#include "ui/views.hpp"
+#include "ui/widget.hpp"
 
 using Telemetry::SessionType;
 
@@ -36,7 +34,7 @@ std::vector<Layout::Block> make_row(auto &&...blocks) {
 }
 
 void InterfaceWorker::operator()(std::stop_token stop_tok) {
-  Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
+  App::AppContext::Log().debug("Started leaderboard worker");
 
   // plane drawing calls take shared lock, nc.render() call takes unique
   struct TurnBasedMutex {
@@ -268,7 +266,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   input_thread.request_stop();
   render_thread.request_stop();
 
-  Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
+  App::AppContext::Log().debug("Exiting leaderboard loop");
 }
 
 }; // namespace Workers

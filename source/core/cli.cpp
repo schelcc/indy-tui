@@ -1,6 +1,12 @@
-#include "core/cli.hpp"
-#include "core.hpp"
+#include <iomanip>
+#include <iterator>
+#include <sstream>
+#include <string>
 #include <string_view>
+#include <variant>
+
+#include "core/cli.hpp"
+#include "core/core.hpp"
 
 static constexpr size_t SEP_WIDTH = 5;
 

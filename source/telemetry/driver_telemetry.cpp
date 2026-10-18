@@ -1,11 +1,13 @@
-#include "telemetry/driver_telemetry.hpp"
-#include "ErpMessage.pb.h"
 #include <cstdlib>
 #include <execution>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
+
+#include "telemetry/driver_telemetry.hpp"
+
+#include "ErpMessage.pb.h"
 
 namespace Telemetry {
 
