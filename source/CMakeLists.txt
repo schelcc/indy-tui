@@ -31,18 +31,22 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(notcurses REQUIRED IMPORTED_TARGET notcurses)
 pkg_check_modules(notcurses++ REQUIRED IMPORTED_TARGET notcurses++)
 
+find_package(spdlog REQUIRED)
+
 add_subdirectory(proto)
 
 add_library(${PROJECT_LIB} ${SOURCES})
 target_include_directories(${PROJECT_LIB} PUBLIC ${HEADERS})
-target_link_libraries(${PROJECT_LIB} PUBLIC indyproto ixwebsocket PkgConfig::notcurses PkgConfig::notcurses++ Catch2::Catch2WithMain)
+target_link_libraries(${PROJECT_LIB} PUBLIC indyproto ixwebsocket PkgConfig::notcurses PkgConfig::notcurses++ spdlog::spdlog)
 target_compile_options(${PROJECT_LIB} BEFORE PUBLIC -Wl,--copy-dt-needed-entries)
-#target_compile_definitions(${PROJECT_LIB} PUBLIC NOLOG=${NOLOG})
+
+
 
 if(BUILD_MAIN)
   add_executable(${PROJECT_EXEC} client_main.cpp)
   target_link_libraries(${PROJECT_EXEC} PUBLIC ${PROJECT_LIB})
   target_compile_definitions(${PROJECT_EXEC} PRIVATE cxx_std_26)
+  target_compile_options(${PROJECT_EXEC} PRIVATE -Wpedantic)
   set_target_properties(${PROJECT_EXEC} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${EXEC_OUT})
 endif()
 

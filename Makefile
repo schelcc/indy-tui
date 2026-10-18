@@ -16,9 +16,9 @@ build: CXX_FLAGS += -DNDEBUG -O3
 build: base_build
 
 
+# debug: EXTRA_CXX_FLAGS += -Wpedantic -Wconversion -Weffc++
 debug: BUILD_TYPE := Debug
-debug: EXTRA_CXX_FLAGS += -Wpedantic -Wconversion -Weffc++
-debug: EXTRA_CMAKE_FLAGS += -DBUILD_MAIN=ON -DBUILD_REPLAY_SERVER=OFF -DBUILD_TESTS=OFF -DBUILD_DISP_DEMO=OFF
+debug: EXTRA_CMAKE_FLAGS +=  -DBUILD_MAIN=ON -DBUILD_REPLAY_SERVER=OFF -DBUILD_TESTS=OFF -DBUILD_DISP_DEMO=OFF
 debug: base_build
 
 
@@ -43,10 +43,6 @@ tests:
 base_build:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_CXX_FLAGS="$(CXX_FLAGS) $(EXTRA_CXX_FLAGS)" -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) $(EXTRA_CMAKE_FLAGS) 
 	cmake --build $(BUILD_DIR) 
-base_build: fix_cc
-
-fix_cc:
-	cp build/compile_commands.json ./compile_commands.json
 
 # Default clean to a soft clean
 clean: soft_clean
