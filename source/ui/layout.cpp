@@ -4,6 +4,7 @@
 #include <span>
 #include <variant>
 
+#include "core.hpp"
 #include "core/input.hpp"
 
 #include "ui/layout.hpp"
@@ -74,7 +75,8 @@ Block::Block(Segments const s, std::shared_ptr<UI::Views::View> w)
 Block::Block(Segments const s, BlockList &&b)
     : element(std::move(b)), segments(s) {}
 
-void BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
+std::expected<void, UI::RenderErr>
+BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
   /*
   For each block, create a new plane with the size corresponding to their
   respective segments and assign it. Afterwards call solve()
@@ -128,64 +130,98 @@ void BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
     // Note: If the renderee needs to have some block state information, this
     // might be a chance to pass it in, in which case this should be a visit.
     // Case for async?
-    if (std::holds_alternative<BlockList>(b.element)) {
-      auto &l = std::get<BlockList>(b.element);
-      l.solve((l.parent == nullptr) ? b.plane : nullptr);
-    }
+    auto res = b.element.visit(Core::Overload{
+        [&b](BlockList &l) -> std::expected<void, UI::RenderErr> {
+          // Not sure why I change what plane is handed to blocklists, but
+          // that's what I had so I'm leaving it for now.
+          return l.solve((l.parent == nullptr) ? b.plane : nullptr);
+        },
+        []([[maybe_unused]] std::shared_ptr<UI::Views::View> &v)
+            -> std::expected<void, UI::RenderErr> {
+          // Will eventually need to do something here, but for now don't.
+          return {};
+        },
+    });
+
+    if (!res.has_value())
+      return res;
   }
+
+  return {};
 }
 
-void BlockList::render(UI::RenderLevel const render_level,
-                       bool const parent_focused) {
+std::expected<void, UI::RenderErr>
+BlockList::render(UI::RenderLevel const render_level,
+                  bool const parent_focused) {
   struct Vis {
     Block &b;
     bool focused;
     UI::RenderLevel render_level;
-    void operator()(std::shared_ptr<UI::Views::View> &v) {
-      if (v->render_callback.has_value())
-        v->render_callback.value()(render_level, b.plane, focused);
+
+    std::expected<void, UI::RenderErr>
+    operator()(std::shared_ptr<UI::Views::View> &v) {
+      auto &render_cb = v->render_callback;
+      return render_cb.has_value()
+                 ? (*render_cb)(render_level, b.plane, focused)
+                 : UI::RenderErr(
+                       UI::RenderErr::Source::VIEW, UI::RenderErr::Reason::NOP,
+                       "Tried rendering a view with no set render callback.");
     }
 
-    void operator()(BlockList &l) { l.render(render_level, focused); }
+    std::expected<void, UI::RenderErr> operator()(BlockList &l) {
+      return l.render(render_level, focused);
+    }
   };
+
   std::unique_lock lock(m);
 
   if (parent == nullptr)
-    return;
+    return UI::RenderErr(UI::RenderErr::Source::LAYOUT,
+                         UI::RenderErr::Reason::NULL_PLANE,
+                         "Tried to render layout with a null parent plane");
 
   // Render only focused child if it's a light render
   if (render_level == UI::RenderLevel::LIGHT) {
     auto it = *focused_elem_it.get_mut();
-    it->element.visit(Vis{*it, true, UI::RenderLevel::LIGHT});
-    return;
+    return it->element.visit(Vis{*it, true, render_level});
   }
 
   // Optimization note: Potentially move rendering out to thread
   // pools? Have leaf blocks be able to dispatch to them? If we are
   // already gonna have the widgets hold on to render callbacks, can't
   // imagine it's too bad.
+  std::expected<void, UI::RenderErr> res;
+
   auto focused_elem = focused_elem_it.get_const();
-  for (auto it = elements.begin(); it < elements.end(); it++)
-    it->element.visit(
+
+  for (auto it = elements.begin(); it < elements.end(); it++) {
+    res = it->element.visit(
         Vis{*it, (parent_focused && (it == *focused_elem)), render_level});
+
+    if (!res.has_value())
+      return res;
+  }
+
+  return {};
 }
 
 bool BlockList::take_input(Input::KeyWithMod const &k) {
-  struct Vis {
-    Input::KeyWithMod const &k;
-    bool operator()(std::shared_ptr<UI::Views::View> &v) {
-      return v->take_input(k);
-    }
-    bool operator()(BlockList &b) { return b.take_input(k); }
-  };
-
   if (input_handler.has_registered(k)) {
     input_handler.handle_input(k);
     return true;
   }
 
   else {
-    return (*(*focused_elem_it.get_mut())).element.visit(Vis{k});
+    // clang-format off
+    return (*(*focused_elem_it.get_mut()))
+        .element.visit(Core::Overload{
+            [&k](std::shared_ptr<UI::Views::View> &v) {
+	      return v->take_input(k);
+	    },
+	    [k](BlockList &l) {
+	      return l.take_input(k);
+	    }});
+    // clang-format on
   }
 }
 

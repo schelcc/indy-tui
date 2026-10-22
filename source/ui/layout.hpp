@@ -27,10 +27,6 @@ using Segments = uint;
 
 struct Block;
 
-template <typename T>
-concept IsLeafNode =
-    std::is_same_v<std::remove_cvref_t<T>, std::shared_ptr<UI::Views::View>>;
-
 struct BlockList {
   std::vector<Block> elements;
 
@@ -42,9 +38,13 @@ struct BlockList {
   Input::InputHandler input_handler;
   std::mutex m;
 
-  void solve(std::shared_ptr<ncpp::Plane> = nullptr);
-  void render(UI::RenderLevel const, bool const);
+  std::expected<void, UI::RenderErr>
+      solve(std::shared_ptr<ncpp::Plane> = nullptr);
+
+  std::expected<void, UI::RenderErr> render(UI::RenderLevel const, bool const);
+
   bool take_input(Input::KeyWithMod const &);
+
   void cycle_focus(UI::FocusDirection const);
 
   BlockList(Direction, std::vector<Block> &&);

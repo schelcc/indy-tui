@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <type_traits>
 #include <variant>
@@ -30,11 +31,13 @@ struct TrackSessionView {
   static constexpr size_t ROWS = 2;
   static constexpr size_t COLS = 3;
 
-  void update_and_render(Telemetry::TrackSession const &, bool const,
-                         std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr>
+  update_and_render(Telemetry::TrackSession const &, bool const,
+                    std::shared_ptr<ncpp::Plane>);
 
   // Lighter render
-  void update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr>
+  update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
@@ -47,11 +50,13 @@ struct SessionStatusView {
   static constexpr size_t ROWS = 4;
   static constexpr size_t COLS = 2;
 
-  void update_and_render(Core::Session const &, bool const,
-                         std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr>
+  update_and_render(Core::Session const &, bool const,
+                    std::shared_ptr<ncpp::Plane>);
 
   // Lighter render
-  void update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr>
+  update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
@@ -101,12 +106,13 @@ struct LeaderboardView {
   void set_columns(std::vector<ColumnInfo> &&);
   void set_num_drivers(size_t const);
 
-  void update_and_render(
+  std::expected<void, RenderErr> update_and_render(
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
       bool const, std::shared_ptr<ncpp::Plane>);
 
   // Lighter render
-  void update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr>
+  update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
 
   bool take_input(Input::KeyWithMod const &);
 
@@ -121,8 +127,9 @@ private:
                          ThreadSafe::LockPair<size_t> &&);
 
   // Logic the same across both renders
-  void always_render(ThreadSafe::LockPair<UI::Table> &&, bool const,
-                     std::shared_ptr<ncpp::Plane>);
+  std::expected<void, UI::RenderErr>
+  always_render(ThreadSafe::LockPair<UI::Table> &&, bool const,
+                std::shared_ptr<ncpp::Plane>);
 };
 
 using view_variant =
@@ -132,18 +139,21 @@ struct View : public view_variant {
   using view_variant::variant;
   using view_variant::operator=;
 
-  std::optional<
-      std::function<void(UI::RenderLevel, std::shared_ptr<ncpp::Plane>, bool)>>
-      render_callback = std::nullopt;
+  using RenderCB = std::function<std::expected<void, RenderErr>(
+      UI::RenderLevel, std::shared_ptr<ncpp::Plane>, bool)>;
+
+  std::optional<RenderCB> render_callback = std::nullopt;
 
   template <typename F>
-    requires(std::is_invocable_r_v<void, F, UI::RenderLevel,
+    requires(std::is_invocable_r_v<std::expected<void, RenderErr>, F,
+                                   UI::RenderLevel,
                                    std::shared_ptr<ncpp::Plane>, bool, View &>)
   void set_render_callback(F &&f) {
-    render_callback = [this, f = std::move(f)](UI::RenderLevel render_level,
-                                               std::shared_ptr<ncpp::Plane> p,
-                                               bool focused) {
-      f(render_level, p, focused, *this);
+    render_callback = [this, f = std::move(f)](
+                          UI::RenderLevel render_level,
+                          std::shared_ptr<ncpp::Plane> p,
+                          bool focused) -> std::expected<void, RenderErr> {
+      return f(render_level, p, focused, *this);
     };
   }
 

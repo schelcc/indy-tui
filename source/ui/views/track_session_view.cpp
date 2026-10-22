@@ -25,9 +25,10 @@ TrackSessionView::TrackSessionView() : table() {
   table.column_props(0)->align = Align::RIGHT;
 }
 
-void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
-                                         bool const focused,
-                                         std::shared_ptr<ncpp::Plane> p) {
+std::expected<void, UI::RenderErr>
+TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
+                                    bool const focused,
+                                    std::shared_ptr<ncpp::Plane> p) {
 
   UI::String flag =
       UI::String(sess.flag_status.get_const()
@@ -66,12 +67,17 @@ void TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
   table.apply(p);
   Tools::Draw::border_with_title(
       p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+
+  return {};
 }
 
-void TrackSessionView::update_and_render(bool const focused,
-                                         std::shared_ptr<ncpp::Plane> p) {
+std::expected<void, UI::RenderErr>
+TrackSessionView::update_and_render(bool const focused,
+                                    std::shared_ptr<ncpp::Plane> p) {
   Tools::Draw::border_with_title(
       p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+
+  return {};
 }
 
 }; // namespace UI::Views

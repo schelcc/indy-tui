@@ -1,10 +1,15 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <expected>
+#include <format>
 #include <memory>
 #include <ncpp/CellStyle.hh>
 #include <ncpp/Palette.hh>
 #include <ncpp/Plane.hh>
+#include <optional>
+#include <string_view>
 
 #include "ui/types.hpp"
 

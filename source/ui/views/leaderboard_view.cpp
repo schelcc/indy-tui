@@ -12,6 +12,7 @@
 
 #include "core/input.hpp"
 
+#include "types.hpp"
 #include "ui/views.hpp"
 #include "ui/widget.hpp"
 
@@ -95,7 +96,7 @@ apply_column(LeaderboardView::ColumnInfo const &c,
          std::ranges::to<std::vector<std::optional<UI::String>>>();
 }
 
-void LeaderboardView::update_and_render(
+std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
     bool const focused, std::shared_ptr<ncpp::Plane> p) {
@@ -152,12 +153,13 @@ void LeaderboardView::update_and_render(
   }
   p->erase();
   locked_table->apply(p);
-  always_render(std::move(locked_table), focused, p);
+  return always_render(std::move(locked_table), focused, p);
 }
 
 // Lighter render
-void LeaderboardView::update_and_render(bool const focused,
-                                        std::shared_ptr<ncpp::Plane> p) {
+std::expected<void, UI::RenderErr>
+LeaderboardView::update_and_render(bool const focused,
+                                   std::shared_ptr<ncpp::Plane> p) {
   auto locked_table = table.get_mut();
 
   auto rows = locked_table->get_dim().rows;
@@ -165,13 +167,14 @@ void LeaderboardView::update_and_render(bool const focused,
   locked_table->apply_row(p, table_cursor.load() % rows);
   locked_table->apply_row(p, (table_cursor.load() + 1) % rows);
 
-  always_render(std::move(locked_table), focused, p);
+  return always_render(std::move(locked_table), focused, p);
 }
 
 // Steps to always render
-void LeaderboardView::always_render(
-    ThreadSafe::LockPair<UI::Table> &&locked_table, bool const focused,
-    std::shared_ptr<ncpp::Plane> p) {
+std::expected<void, UI::RenderErr>
+LeaderboardView::always_render(ThreadSafe::LockPair<UI::Table> &&locked_table,
+                               bool const focused,
+                               std::shared_ptr<ncpp::Plane> p) {
   auto dim = locked_table->get_dim();
 
   {
@@ -194,6 +197,8 @@ void LeaderboardView::always_render(
 
   Tools::Draw::border_with_title(
       p, "Leaderboard", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+
+  return {};
 }
 
 bool LeaderboardView::take_input(Input::KeyWithMod const &k) {

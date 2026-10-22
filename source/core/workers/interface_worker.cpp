@@ -72,13 +72,13 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     sess_status_view->set_render_callback(
         [this](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
-               bool focused, UI::Views::View &view) -> void {
-          if (render_level == UI::RenderLevel::FULL)
-            view.as<UI::Views::SessionStatusView>().update_and_render(
-                sess, focused, p);
-          else
-            view.as<UI::Views::SessionStatusView>().update_and_render(focused,
-                                                                      p);
+               bool focused,
+               UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
+          auto &v = view.as<UI::Views::SessionStatusView>();
+
+          return (render_level == UI::RenderLevel::FULL)
+                     ? v.update_and_render(sess, focused, p)
+                     : v.update_and_render(focused, p);
         });
 
     event_status_view =
@@ -86,27 +86,26 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     event_status_view->set_render_callback(
         [&board](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
-                 bool focused, UI::Views::View &view) -> void {
-          assert(p != nullptr);
-          if (render_level == UI::RenderLevel::FULL)
-            view.as<UI::Views::TrackSessionView>().update_and_render(
-                board.session_info, focused, p);
-          else
-            view.as<UI::Views::TrackSessionView>().update_and_render(focused,
-                                                                     p);
+                 bool focused,
+                 UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
+          auto &v = view.as<UI::Views::TrackSessionView>();
+
+          return (render_level == UI::RenderLevel::FULL)
+                     ? v.update_and_render(board.session_info, focused, p)
+                     : v.update_and_render(focused, p);
         });
 
     leaderboard_view = UI::Views::View::MakeView<UI::Views::LeaderboardView>();
 
     leaderboard_view->set_render_callback(
         [&board](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
-                 bool focused, UI::Views::View &view) -> void {
-          assert(p != nullptr);
-          if (render_level == UI::RenderLevel::FULL)
-            view.as<UI::Views::LeaderboardView>().update_and_render(
-                board.reorder_and_get(), focused, p);
-          else
-            view.as<UI::Views::LeaderboardView>().update_and_render(focused, p);
+                 bool focused,
+                 UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
+          auto &v = view.as<UI::Views::LeaderboardView>();
+
+          return (render_level == UI::RenderLevel::FULL)
+                     ? v.update_and_render(board.reorder_and_get(), focused, p)
+                     : v.update_and_render(focused, p);
         });
 
     leaderboard_view->as<UI::Views::LeaderboardView>().set_columns(
@@ -131,7 +130,15 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   BlockList root_layout(VERTICAL, make_row(Block(1, std::move(info_row)),
                                            Block(4, leaderboard_view)));
 
-  root_layout.solve(std_plane);
+  auto res = root_layout.solve(std_plane);
+  if (!res.has_value()) {
+    App::AppContext::Log().error("Error solving initial root layout: {}",
+                                 res.error().what());
+
+    App::AppContext::Shutdown("Failed to solve initial root layout: " +
+                              res.error().what());
+    return;
+  }
 
   std::jthread render_thread =
       std::jthread{[&render_mtx, this](std::stop_token stop_tok) {
@@ -217,6 +224,9 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   auto last_full_render = Time::Clock::now();
   bool init_render_done = false;
 
+  std::expected<void, UI::RenderErr> render_res;
+  std::expected<void, UI::RenderErr> solve_res;
+
   while (!stop_tok.stop_requested()) [[likely]] {
 
     std::this_thread::sleep_for(Time::Duration::UIntMilliSec(10));
@@ -243,7 +253,21 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     {
       auto lock = render_mtx.lock_shared();
-      root_layout.render(render_level, true);
+
+      render_res = root_layout.render(render_level, true);
+
+      if (!render_res.has_value()) {
+        UI::RenderErr &e = render_res.error();
+
+        if (e.reason == UI::RenderErr::NOP) {
+          App::AppContext::Log().warn(
+              "Allowing render NOP to fail passively: {}", e.what());
+        } else {
+          App::AppContext::Log().error("Failed to render: {}", e.what());
+          App::AppContext::Shutdown("Encountered error rendering: " + e.what());
+          break;
+        }
+      }
     }
 
     // Possible optimization: use built in notcurses resize_cb
@@ -255,7 +279,14 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     // Note: For some reason if this is pre-render it doesn't work?
     if ((std_plane->get_dim_y() != pre_dim_y) ||
         (std_plane->get_dim_x() != pre_dim_x)) [[unlikely]] {
-      root_layout.solve(std_plane);
+      solve_res = root_layout.solve(std_plane);
+      if (!solve_res.has_value()) {
+        App::AppContext::Log().error("Failed to re-solve root layout: {}",
+                                     res.error().what());
+        App::AppContext::Shutdown("Encounted error re-solving root layout: " +
+                                  res.error().what());
+        break;
+      }
     }
 
     std_plane->get_dim(&pre_dim_y, &pre_dim_x);

@@ -27,7 +27,7 @@ class AppContext {
   std::latch _shutdown_latch{1};
 
   std::mutex _reason_mtx;
-  std::optional<std::string_view> _reason;
+  std::optional<std::string> _reason;
 
   const std::string _instance_name{std::format(
       "{:%F_%X}", std::chrono::zoned_time{std::chrono::current_zone(),
