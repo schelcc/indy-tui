@@ -32,7 +32,7 @@ static constexpr std::array<char, 64> ENC_B64{
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/',
 };
 
-std::string b64_decode(std::string_view);
-std::string b64_encode(std::string_view);
+std::string b64_decode(std::string_view const) noexcept;
+std::string b64_encode(std::string_view const) noexcept;
 
 }; // namespace Tools

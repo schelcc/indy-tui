@@ -4,7 +4,7 @@
 
 namespace Tools {
 
-std::string b64_decode(std::string_view encoded) {
+std::string b64_decode(std::string_view const encoded) noexcept {
   std::string output{};
   size_t pad = 0;
 
@@ -50,7 +50,7 @@ std::string b64_decode(std::string_view encoded) {
   return output;
 }
 
-std::string b64_encode(std::string_view input) {
+std::string b64_encode(std::string_view const input) noexcept {
   std::string output{};
 
   auto in_iter = input.begin();
