@@ -57,4 +57,22 @@ consteval bool variant_has_alternative() {
 template <typename T, typename V>
 concept VariantHasAlternative = variant_has_alternative<T, V>();
 
+/** @brief Macro to evaluate an expression returning std::expected
+and, if the return value has the error value, early-return the
+value. Otherwise the returned value is dropped. */
+#define TRY_DROP(expr)                                                         \
+  {                                                                            \
+    auto _ = (expr);                                                           \
+    if (!_.has_value())                                                        \
+      return _.error();                                                        \
+  }
+
+/** @brief Same as TRY_DROP(), but assigns the value to the given name if
+ * successful. */
+#define TRY_USE(name, expr)                                                    \
+  auto RESULT_##name = (expr);                                                 \
+  if (!RESULT_##name.has_value())                                              \
+    return RESULT_##name.error();                                              \
+  auto name = std::move(RESULT_##name).value();
+
 }; // namespace Core
