@@ -153,13 +153,12 @@ public:
   /// backing keys when this is set is an error.
   std::atomic_flag no_backing_keys = true;
 
+  /// @brief The table's current dimensions. Should not be modified externally.
+  /// Just don't do it please.
+  ThreadSafe::Locked<Dim> dim;
+
   // Methods
   bool take_input(Input::KeyWithMod &);
-
-  /** @brief Retrieve the table's current dimensions. */
-  Dim get_dim() const noexcept;
-  std::pair<std::unique_lock<std::shared_mutex>, Dim>
-  get_dim(std::unique_lock<std::shared_mutex> &&) const noexcept;
 
   /** @brief Set the table's dimensions. Fully clears the table. */
   void set_dim(Dim const &) noexcept;

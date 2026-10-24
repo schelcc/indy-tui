@@ -42,7 +42,7 @@ LeaderboardView::LeaderboardView() : table_info() {
             auto t = table_info.get_mut();
 
             auto res = t->table.get_backing_key(table_cursor.load() %
-                                                t->table.get_dim().rows);
+                                                t->table.dim.get_const()->rows);
             if (!res.has_value()) {
               App::AppContext::Log().warn(
                   "Failed to match table's cursor to a backing key");
@@ -87,7 +87,7 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
   auto t = table_info.get_mut();
 
-  auto dim = t->table.get_dim();
+  auto dim = *t->table.dim.get_const();
 
   // Reconstruct columns if needed
   if (t->cols.size() != dim.cols) {
@@ -105,7 +105,7 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     for (auto &c : t->cols)
       t->table.column_props(idx++)->align = c.align;
 
-    dim = t->table.get_dim();
+    dim = *t->table.dim.get_const();
 
   } else if (drivers->size() != dim.rows) {
     App::AppContext::Log().debug("Leaderboard reconfiguring table to match {} "
@@ -115,7 +115,7 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     // well -- only reached if just num drivers has changed.
     t->table.set_dim(Table::Dim(drivers->size(), t->cols.size()));
 
-    dim = t->table.get_dim();
+    dim = *t->table.dim.get_const();
   }
 
   // Do nothing if we have no columns or no drivers
@@ -193,7 +193,7 @@ LeaderboardView::update_and_render(bool const focused,
                                    std::shared_ptr<ncpp::Plane> p) {
   auto t = table_info.get_mut();
 
-  auto rows = t->table.get_dim().rows;
+  auto rows = t->table.dim.get_const()->rows;
   t->table.apply_row(p, (table_cursor.load() - 1) % rows);
   t->table.apply_row(p, table_cursor.load() % rows);
   t->table.apply_row(p, (table_cursor.load() + 1) % rows);
@@ -206,7 +206,7 @@ std::expected<void, UI::RenderErr>
 LeaderboardView::always_render(ThreadSafe::LockPair<TableInfo> &&t,
                                bool const focused,
                                std::shared_ptr<ncpp::Plane> p) {
-  auto dim = t->table.get_dim();
+  auto dim = *t->table.dim.get_const();
 
   // {
   //   auto h_rows = highlight_rows.get_const();
