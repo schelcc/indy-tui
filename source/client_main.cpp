@@ -273,6 +273,10 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
                               App::AppContext::GetReason().value_or(
                                   "no reason provided -- ungraceful shutdown"));
 
+  std::println("Shutdown requested for reason '{}'",
+               App::AppContext::GetReason().value_or(
+                   "no reason provided -- ungraceful shutdown"));
+
   output_thread.request_stop();
 
   output_thread.join();

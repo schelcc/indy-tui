@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "driver_telemetry.hpp"
-#include "google/protobuf/repeated_ptr_field.h"
 
 #include "core/core.hpp"
 #include "core/input.hpp"
@@ -64,9 +63,6 @@ struct SessionStatusView {
 };
 
 struct LeaderboardView {
-  template <typename Field>
-  using ProtoIter = google::protobuf::RepeatedPtrField<Field>;
-
   using ColumnFunc =
       std::function<UI::String(Telemetry::DriverTelemetry const &)>;
 
@@ -98,13 +94,28 @@ struct LeaderboardView {
     UI::Color color;
   };
 
-  ThreadSafe::Locked<UI::Table> table;
-  ThreadSafe::Locked<std::vector<RowHighlight>> highlight_rows{};
+  struct TableInfo {
+    /// @brief Currently (late 2026) there are 25 charters in the series, so
+    /// we'll default to 25 entries in the table. The 500 will be more, and the
+    /// charters will increase in '28.
+    static constexpr size_t DEFAULT_DRIVER_NUM = 25;
+
+    UI::Table table;
+    std::vector<ColumnInfo> cols;
+    std::unordered_set<std::string> user_flagged_drivers;
+
+    TableInfo() : table(), cols(), user_flagged_drivers()  {
+      table.set_dim(Table::Dim(DEFAULT_DRIVER_NUM, 1));
+    }
+  };
+
+  ThreadSafe::Locked<TableInfo> table_info;
+
   std::atomic<size_t> table_cursor = 0;
+
   Input::InputHandler handler{};
 
   void set_columns(std::vector<ColumnInfo> &&);
-  void set_num_drivers(size_t const);
 
   std::expected<void, RenderErr> update_and_render(
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
@@ -122,13 +133,11 @@ private:
   ThreadSafe::Locked<std::vector<ColumnInfo>> _cols;
   ThreadSafe::Locked<size_t> _num_drivers;
 
-  void reconstruct_table(ThreadSafe::LockPair<UI::Table> &&,
-                         ThreadSafe::LockPair<std::vector<ColumnInfo>> &&,
-                         ThreadSafe::LockPair<size_t> &&);
+  void reconstruct_table(ThreadSafe::LockPair<TableInfo> &&) noexcept;
 
   // Logic the same across both renders
   std::expected<void, UI::RenderErr>
-  always_render(ThreadSafe::LockPair<UI::Table> &&, bool const,
+  always_render(ThreadSafe::LockPair<TableInfo> &&, bool const,
                 std::shared_ptr<ncpp::Plane>);
 };
 

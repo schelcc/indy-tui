@@ -4,6 +4,7 @@
 #include <notcurses/nckeys.h>
 #include <ranges>
 
+#include "app_context.hpp"
 #include "tools/draw.hpp"
 #include "tools/locked.hpp"
 #include "tools/perf.hpp"
@@ -22,9 +23,12 @@ namespace UI::Views {
 
 using UI::Table;
 
-LeaderboardView::LeaderboardView() : table(), _cols(), _num_drivers(0) {
-  table.get_mut()->set_dim(Table::Dim(0, 0));
-  table.get_mut()->column_sep = 1;
+LeaderboardView::LeaderboardView() : table_info() {
+  // table.get_mut()->set_dim(Table::Dim(0, 0));
+  // table.get_mut()->column_sep = 1;
+
+  // We'll need the backing keys for the leaderboard
+  table_info.get_mut()->table.no_backing_keys.clear();
 
   using namespace Input;
   handler
@@ -35,57 +39,33 @@ LeaderboardView::LeaderboardView() : table(), _cols(), _num_drivers(0) {
       .register_callback(
           KeyWithMod(NCKEY_SPACE, Modifier::NONE),
           "Toggle highlighting on the current row", [this] {
-            [[maybe_unused]] std::expected<void, WidgetErr> res;
-            auto d = table.get_const()->get_dim();
+            auto t = table_info.get_mut();
 
-            auto h_rows = highlight_rows.get_mut();
-            auto row = table_cursor.load();
+            auto res = t->table.get_backing_key(table_cursor.load() %
+                                                t->table.get_dim().rows);
+            if (!res.has_value()) {
+              App::AppContext::Log().warn(
+                  "Failed to match table's cursor to a backing key");
+              return;
+            }
 
-            auto it = std::ranges::find_if(*h_rows, [row, d](auto const &r) {
-              return r.idx == (row % d.rows);
-            });
-            if (it == h_rows->end()) {
-              h_rows->emplace_back(row % d.rows, UI::Color::CYAN_SOFT);
+            if (t->user_flagged_drivers.contains(res.value())) {
+              t->user_flagged_drivers.erase(res.value());
+              App::AppContext::Log().debug(
+                  "Removed row with backing key \"{}\" to user-flagged drivers",
+                  res.value());
             } else {
-              h_rows->erase(it);
+              t->user_flagged_drivers.emplace(res.value());
+              App::AppContext::Log().debug(
+                  "Added row with backing key \"{}\" to user-flagged drivers",
+                  res.value());
             }
           });
 }
 
 void LeaderboardView::set_columns(std::vector<ColumnInfo> &&cs) {
-  auto locked_columns = _cols.get_mut();
-  *locked_columns = std::move(cs);
-
-  reconstruct_table(table.get_mut(), std::move(locked_columns),
-                    _num_drivers.get_mut());
-}
-
-void LeaderboardView::set_num_drivers(size_t const num) {
-  // Do nothing if would not change
-  if (num == *_num_drivers.get_const())
-    return;
-
-  auto locked_num = _num_drivers.get_mut();
-  *locked_num = num;
-
-  reconstruct_table(table.get_mut(), _cols.get_mut(), std::move(locked_num));
-}
-
-void LeaderboardView::reconstruct_table(
-    LockPair<UI::Table> &&locked_table,
-    LockPair<std::vector<ColumnInfo>> &&locked_columns,
-    LockPair<size_t> &&locked_num) {
-
-  // Reset dimensions, adding 1 row to account for column titles
-  locked_table->set_dim(Table::Dim(*locked_num, locked_columns->size()));
-
-  // Default the cursor position to be in the middle of size_t's range, at the
-  // closest equiv. 0 mod rows
-  table_cursor = *locked_num * 100;
-
-  // Set alignment based on the columns
-  for (auto [idx, c] : std::views::enumerate(*locked_columns))
-    locked_table->column_props(idx)->align = c.align;
+  auto t = table_info.get_mut();
+  t->cols = std::move(cs);
 }
 
 // Callback for async column-function application
@@ -100,23 +80,48 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
     bool const focused, std::shared_ptr<ncpp::Plane> p) {
-  // TODO - Figure out a better spot for this
-  set_num_drivers(drivers->size());
 
-  auto locked_table = table.get_mut();
+  if (drivers->size() == 0)
+    return RenderErr(RenderErr::Source::VIEW, RenderErr::NOP,
+                     "Leaderboard received no drivers to render");
+
+  auto t = table_info.get_mut();
+
+  auto dim = t->table.get_dim();
+
+  // Reconstruct columns if needed
+  if (t->cols.size() != dim.cols) {
+    App::AppContext::Log().debug("Leaderboard reconfiguring table to match {} "
+                                 "drivers and {} column functions",
+                                 drivers->size(), t->cols.size());
+
+    t->table.set_dim(Table::Dim(drivers->size(), t->cols.size()));
+
+    // Reset the cursor to be a large number which is 0 mod num drivers
+    table_cursor = drivers->size() * 100;
+
+    // Configure the table columns' properties based on our columns
+    size_t idx = 0;
+    for (auto &c : t->cols)
+      t->table.column_props(idx++)->align = c.align;
+
+    dim = t->table.get_dim();
+
+  } else if (drivers->size() != dim.rows) {
+    App::AppContext::Log().debug("Leaderboard reconfiguring table to match {} "
+                                 "drivers and {} column functions",
+                                 drivers->size(), t->cols.size());
+    // Reconfigure rows if neeeded. Already done if cols mismatched as
+    // well -- only reached if just num drivers has changed.
+    t->table.set_dim(Table::Dim(drivers->size(), t->cols.size()));
+
+    dim = t->table.get_dim();
+  }
 
   // Do nothing if we have no columns or no drivers
-  if (!drivers->empty() && !_cols.get_const()->empty() &&
-      (*_num_drivers.get_const() > 0)) [[likely]] {
-
+  if (!drivers->empty() && !t->cols.empty()) [[likely]] {
     // Let's try the fully synchronous method and profile it, improve it if
     // necessary
-
-    auto dim = locked_table->get_dim();
-
-    assert(dim.cols == _cols.get_const()->size());
-    assert(dim.rows == *_num_drivers.get_const());
-    assert(dim.rows == drivers->size());
 
     // Calculate and draw columns
     {
@@ -129,62 +134,103 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
       std::vector<ColStrPair> col_strs{};
       col_strs.reserve(drivers->size() + 1);
 
-      auto cols = _cols.get_const();
-
       // For each column, add to col_strs an async call which applies the col
       // func to the drivers vec
       size_t pos = 0;
       std::transform(
-          std::begin(*cols), std::end(*cols), std::back_inserter(col_strs),
+          std::cbegin(t->cols), std::cend(t->cols),
+          std::back_inserter(col_strs),
           [&drivers, &pos](ColumnInfo const &col_func) {
             return std::make_tuple(
-                pos++, std::async(apply_column, col_func, std::cref(*drivers)));
+                pos++, std::async(std::launch::async | std::launch::deferred,
+                                  apply_column, col_func, std::cref(*drivers)));
           });
+
+      // Reorder backing keys
+      auto backing_reorder_res = t->table.set_backing_keys(
+          std::ranges::fold_left(*drivers, std::vector<std::string>(),
+                                 [](std::vector<std::string> &&v,
+                                    Telemetry::DriverTelemetry const &d)
+                                     -> std::vector<std::string> {
+                                   v.emplace_back(d.get_car_num());
+                                   return v;
+                                 }));
+
+      // Ensure backing reordering was successful
+      if (!backing_reorder_res.has_value()) {
+        switch (backing_reorder_res.error().kind) {
+        case WidgetErr::OUT_OF_RANGE:
+          return RenderErr(RenderErr::Source::WIDGET, RenderErr::TABLE_ERR,
+                           "Leaderboard tried to set more backing keys than "
+                           "the table supports");
+          break;
+        case WidgetErr::ACTION_DISABLED:
+          return RenderErr(RenderErr::Source::WIDGET, RenderErr::TABLE_ERR,
+                           "Leaderboard tried to set backing keys whilst "
+                           "backing keys are disabled");
+          break;
+        }
+      }
 
       // Retrieve the value from the generated futures and populate the table
       // accordingly
-      for (auto &[pos, val] : col_strs) {
+      for (auto &[col_idx, val] : col_strs) {
         [[maybe_unused]] auto res =
-            locked_table->update_col(pos, std::move(val).get());
+            t->table.update_col(col_idx, std::move(val).get());
       }
 
       App::PerfContext::StopLeaderboardPopulationTime();
     }
   }
   p->erase();
-  locked_table->apply(p);
-  return always_render(std::move(locked_table), focused, p);
+  t->table.apply(p);
+  return always_render(std::move(t), focused, p);
 }
 
 // Lighter render
 std::expected<void, UI::RenderErr>
 LeaderboardView::update_and_render(bool const focused,
                                    std::shared_ptr<ncpp::Plane> p) {
-  auto locked_table = table.get_mut();
+  auto t = table_info.get_mut();
 
-  auto rows = locked_table->get_dim().rows;
-  locked_table->apply_row(p, (table_cursor.load() - 1) % rows);
-  locked_table->apply_row(p, table_cursor.load() % rows);
-  locked_table->apply_row(p, (table_cursor.load() + 1) % rows);
+  auto rows = t->table.get_dim().rows;
+  t->table.apply_row(p, (table_cursor.load() - 1) % rows);
+  t->table.apply_row(p, table_cursor.load() % rows);
+  t->table.apply_row(p, (table_cursor.load() + 1) % rows);
 
-  return always_render(std::move(locked_table), focused, p);
+  return always_render(std::move(t), focused, p);
 }
 
 // Steps to always render
 std::expected<void, UI::RenderErr>
-LeaderboardView::always_render(ThreadSafe::LockPair<UI::Table> &&locked_table,
+LeaderboardView::always_render(ThreadSafe::LockPair<TableInfo> &&t,
                                bool const focused,
                                std::shared_ptr<ncpp::Plane> p) {
-  auto dim = locked_table->get_dim();
+  auto dim = t->table.get_dim();
+
+  // {
+  //   auto h_rows = highlight_rows.get_const();
+
+  //   for (auto const &[idx, color] : *h_rows) {
+  //     auto ncpp_color =
+  //         Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG, color);
+  //     p->stain((idx % dim.rows) + 1, 1, 1, p->get_dim_x() - 1, ncpp_color,
+  //              ncpp_color, ncpp_color, ncpp_color);
+  //   }
+  // }
 
   {
-    auto h_rows = highlight_rows.get_const();
-    for (auto const &[idx, color] : *h_rows) {
-      auto ncpp_color =
-          Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG, color);
-      p->stain((idx % dim.rows) + 1, 1, 1, p->get_dim_x() - 1, ncpp_color,
-               ncpp_color, ncpp_color, ncpp_color);
+    auto res = t->table.batch_key_lookup(t->user_flagged_drivers);
+    if (!res.has_value()) {
+      return UI::RenderErr(UI::RenderErr::Source::VIEW,
+                           UI::RenderErr::TABLE_ERR,
+                           "Failed to batch-lookup user-flagged drivers");
     }
+
+    auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
+                                                UI::Color::BLUE_SOFT);
+    for (size_t idx : std::move(res.value()))
+      p->stain(idx + 1, 1, 1, p->get_dim_x() - 1, color, color, color, color);
   }
 
   // Draw cursor, if focused

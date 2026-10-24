@@ -50,14 +50,17 @@ struct RenderErr {
     NULL_PLANE = 0,
     PLANE_OVERFLOW = 1,
     PLANE_UNDERFLOW = 2,
-    NOP = 3
+    NOP = 3,
+    TABLE_MISMATCH = 4,
+    TABLE_ERR = 5,
   };
 
   enum Source : size_t { WIDGET = 0, VIEW = 1, LAYOUT = 2 };
 
   // Todo : Once reflection is well supported use it here
-  static constexpr std::array<std::string_view, 4> REASON_STRS = {
-      "NullPlane", "PlaneOverflow", "PlaneUnderflow", "NoOp"};
+  static constexpr std::array<std::string_view, 6> REASON_STRS = {
+      "NullPlane", "PlaneOverflow", "PlaneUnderflow",
+      "NoOp",      "TableMismatch", "TableErr"};
 
   static constexpr std::array<std::string_view, 3> SOURCE_STRS = {
       "Widget", "View", "Layout"};
@@ -68,7 +71,7 @@ struct RenderErr {
 
   [[nodiscard]] std::string what() const noexcept {
     return msg.has_value()
-               ? std::format("error {} originating {} -- {}",
+               ? std::format("error {} originating in {} -- {}",
                              REASON_STRS[reason].data(),
                              SOURCE_STRS[source].data(), msg.value())
                : std::format("error {} originating in {}",

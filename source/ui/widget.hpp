@@ -8,6 +8,7 @@
 #include <memory>
 #include <ranges>
 #include <shared_mutex>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -124,11 +125,17 @@ public:
 private:
   mutable std::shared_mutex _mtx;
 
-  // IMPROVEMENT : Switch to columns of rows and save on computation of column
-  // widths
-
   // Columns of rows
   std::vector<Column> _table{};
+
+  // Coooooould use std::any here and require caller to provide the type when
+  // resolving backing keys, but seems like overkill
+
+  /// @brief Keys to associate with rows that are never shown upon
+  /// render, are only used to provide the user a way to associate row
+  /// content. Kept at the same dimensions as the table's rows unless
+  /// `no_backing_keys` is true.
+  std::vector<std::string> _backing_keys{};
 
 public:
   // Properties
@@ -142,11 +149,17 @@ public:
   /// @brief Empty cell representation, defaults to "--"
   UI::String empty_cell = "--";
 
+  /// @brief Whether to disable backing keys. To attempt to retrieve
+  /// backing keys when this is set is an error.
+  std::atomic_flag no_backing_keys = true;
+
   // Methods
   bool take_input(Input::KeyWithMod &);
 
   /** @brief Retrieve the table's current dimensions. */
   Dim get_dim() const noexcept;
+  std::pair<std::unique_lock<std::shared_mutex>, Dim>
+  get_dim(std::unique_lock<std::shared_mutex> &&) const noexcept;
 
   /** @brief Set the table's dimensions. Fully clears the table. */
   void set_dim(Dim const &) noexcept;
@@ -154,6 +167,34 @@ public:
   /** @brief Access a column's properties. Throws if column is not within range.
    */
   ThreadSafe::LockPair<Column::Props> column_props(size_t const);
+
+  /** @brief Retrieve the backing key associated with the given row. Requires
+   * `no_backing_keys` not be set. */
+  std::expected<std::string, WidgetErr>
+  get_backing_key(size_t const) const noexcept;
+
+  /** @brief Retrieve a collection of row indices associated with the given
+   * keys. If no keys match, returns empty vector. Requires `no_backing_keys`
+   * not be set. */
+  std::expected<std::vector<size_t>, WidgetErr>
+  batch_key_lookup(std::unordered_set<std::string> const &) const noexcept;
+
+  /** @brief Get the row index associated with the given backing key,
+   * if one exists. Returns WidgetErr::OUT_OF_RANGE if no such key
+   * exists in the table. Requires `no_backing_keys` not be set. */
+  std::expected<size_t, WidgetErr>
+  get_backing_key_row(std::string_view const) const noexcept;
+
+  /** @brief Set the backing key associated with the given row. Requires
+   * `no_backing_keys` not be set. */
+  std::expected<void, WidgetErr>
+  set_backing_key(size_t const, std::string_view const) noexcept;
+
+  /** @brief Set the backing keys for the full table, optionally providing an
+   * offset to place the start of the new keys. Requires `no_backing_keys` not
+   * be set. */
+  std::expected<void, WidgetErr> set_backing_keys(std::vector<std::string> &&,
+                                                  size_t const = 0) noexcept;
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
   void apply(std::shared_ptr<ncpp::Plane>) const noexcept;
