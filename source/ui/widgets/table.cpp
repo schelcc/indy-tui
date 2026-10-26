@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <expected>
 #include <iterator>
 #include <mutex>
 
@@ -10,6 +11,7 @@
 #include "app_context.hpp"
 #include "tools/locked.hpp"
 
+#include "types.hpp"
 #include "ui/string.hpp"
 #include "ui/widget.hpp"
 
@@ -23,6 +25,9 @@ void Table::Column::recalculate_width(UI::String const &default_str) {
     max_width =
         s.has_value() ? std::max(max_width, s.value().size()) : max_width;
   }
+
+  // Never let max_width be zero
+  max_width = (max_width > 0) ? max_width : 1;
 }
 
 void Table::set_dim(Table::Dim const &d) noexcept {
@@ -345,8 +350,28 @@ std::expected<void, WidgetErr> Table::clear_at(size_t const row,
   return {};
 }
 
-void Table::apply(ncpp::Plane *const p) const noexcept {
+void Table::update_baseplane(ncpp::Plane *const p) noexcept {
+  App::AppContext::Log().debug(
+      "Changing table's base plane ({}) to given plane ({})", (size_t)_plane,
+      (size_t)p);
+
+  if (_plane == nullptr) [[unlikely]] {
+    _plane = p;
+  } else {
+    _plane->reparent_family(p);
+  }
+}
+
+std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
   std::shared_lock lock(_mtx);
+
+  if (_plane != p)
+    update_baseplane(p);
+
+  if (_plane == nullptr)
+    return UI::RenderErr(
+        UI::RenderErr::Source::WIDGET, UI::RenderErr::NULL_PLANE,
+        "Tried to apply table when table's internal plane is null");
 
   size_t col_pos = 1;
   size_t idx = 0;
@@ -366,15 +391,26 @@ void Table::apply(ncpp::Plane *const p) const noexcept {
                                        ? (col.max_width - row_s.size())
                                        : ((col.max_width - row_s.size()) / 2)));
 
-      row_s.apply_to_plane(p, row_offset, x, padding_to_col);
+      row_s.apply_to_plane(_plane, row_offset, x, padding_to_col);
       row_offset++;
     }
     col_pos += (col.max_width + column_sep);
   }
+
+  return {};
 }
 
-void Table::apply_row(ncpp::Plane *const p, size_t const row) const noexcept {
+std::expected<void, UI::RenderErr> Table::apply_row(ncpp::Plane *const p,
+                                                    size_t const row) noexcept {
   std::shared_lock lock(_mtx);
+
+  if (_plane != p)
+    update_baseplane(p);
+
+  if (_plane == nullptr)
+    return UI::RenderErr(
+        UI::RenderErr::Source::WIDGET, UI::RenderErr::NULL_PLANE,
+        "Tried to apply table when table's internal plane is null");
 
   size_t idx = 0;
   size_t col_pos = 1;
@@ -392,9 +428,11 @@ void Table::apply_row(ncpp::Plane *const p, size_t const row) const noexcept {
                                      ? (col.max_width - row_s.size())
                                      : ((col.max_width - row_s.size()) / 2)));
 
-    row_s.apply_to_plane(p, row + 1, x, padding_to_col);
+    row_s.apply_to_plane(_plane, row + 1, x, padding_to_col);
     col_pos += (col.max_width + column_sep);
   }
+
+  return {};
 }
 
 void Table::clear() noexcept {

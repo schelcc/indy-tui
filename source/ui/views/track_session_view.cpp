@@ -64,7 +64,7 @@ TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
     res = table.update_row(
         1, {"Time left", sess.time_to_go.get_const()->value_or("--:--:--")});
 
-  table.apply(p);
+  TRY_DROP(table.apply(p));
   Tools::Draw::border_with_title(
       p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 

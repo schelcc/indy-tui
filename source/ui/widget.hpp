@@ -20,6 +20,7 @@
 
 #include "tools/locked.hpp"
 
+#include "types.hpp"
 #include "ui/string.hpp"
 
 namespace UI {
@@ -112,7 +113,7 @@ public:
   /** @brief Dataclass to store column-based formatting properties. */
   struct Column {
     std::vector<std::optional<UI::String>> rows;
-    size_t max_width = 0;
+    size_t max_width = 1;
 
     struct Props {
       Align align = Align::LEFT;
@@ -136,6 +137,15 @@ private:
   /// content. Kept at the same dimensions as the table's rows unless
   /// `no_backing_keys` is true.
   std::vector<std::string> _backing_keys{};
+
+  /// @brief We'll hold around a plane and handle its life
+  /// ourselves. It should not reparent or change z level, as that is
+  /// not thread safe.
+  ncpp::Plane *_plane = nullptr;
+
+  /** @brief Update the base plane to the given plane. Does not synchronize
+   * access, as should only be called when a lock is already acquired. */
+  void update_baseplane(ncpp::Plane *const p) noexcept;
 
 public:
   // Properties
@@ -198,10 +208,11 @@ public:
                                                   size_t const = 0) noexcept;
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
-  void apply(ncpp::Plane *const) const noexcept;
+  std::expected<void, UI::RenderErr> apply(ncpp::Plane *const) noexcept;
 
   /** @brief Apply select rows to a plane. Does not synchronize plane access. */
-  void apply_row(ncpp::Plane *const, size_t const) const noexcept;
+  std::expected<void, UI::RenderErr> apply_row(ncpp::Plane *const,
+                                               size_t const) noexcept;
 
   /** @brief Set the string at the specified row and column to the given value.
    * Cell must be within the table's current dimensions. Returns expected

@@ -57,7 +57,7 @@ SessionStatusView::update_and_render(Core::Session const &sess,
           std::format("{:5.2f}%", delay_pct * 100)});
 
   if (res.has_value())
-    table.apply(p);
+    TRY_DROP(table.apply(p));
 
   Tools::Draw::border_with_title(
       p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);

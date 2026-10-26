@@ -4,6 +4,7 @@
 #include <span>
 #include <variant>
 
+#include "app_context.hpp"
 #include "core.hpp"
 #include "core/input.hpp"
 
@@ -62,6 +63,8 @@ BlockList &BlockList::operator=(BlockList &&other) noexcept {
 }
 
 void BlockList::cycle_focus(UI::FocusDirection const d) {
+  App::AppContext::Log().debug(
+      "Cycling focus {}", (d == UI::FocusDirection::NEXT) ? "forward" : "back");
   auto it = focused_elem_it.get_mut();
   if (d == UI::FocusDirection::NEXT)
     *it = ((*it + 1) < elements.end()) ? (*it + 1) : (elements.begin());

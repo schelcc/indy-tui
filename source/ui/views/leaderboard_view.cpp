@@ -183,7 +183,7 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     }
   }
   p->erase();
-  t->table.apply(p);
+  TRY_DROP(t->table.apply(p));
   return always_render(std::move(t), focused, p);
 }
 
@@ -194,9 +194,9 @@ LeaderboardView::update_and_render(bool const focused,
   auto t = table_info.get_mut();
 
   auto rows = t->table.dim.get_const()->rows;
-  t->table.apply_row(p, (table_cursor.load() - 1) % rows);
-  t->table.apply_row(p, table_cursor.load() % rows);
-  t->table.apply_row(p, (table_cursor.load() + 1) % rows);
+  TRY_DROP(t->table.apply_row(p, (table_cursor.load() - 1) % rows));
+  TRY_DROP(t->table.apply_row(p, table_cursor.load() % rows));
+  TRY_DROP(t->table.apply_row(p, (table_cursor.load() + 1) % rows));
 
   return always_render(std::move(t), focused, p);
 }
