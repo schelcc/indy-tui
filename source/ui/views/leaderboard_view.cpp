@@ -79,7 +79,7 @@ apply_column(LeaderboardView::ColumnInfo const &c,
 std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
-    bool const focused, std::shared_ptr<ncpp::Plane> p) {
+    bool const focused, ncpp::Plane *const p) noexcept {
 
   if (drivers->size() == 0)
     return RenderErr(RenderErr::Source::VIEW, RenderErr::NOP,
@@ -190,7 +190,7 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 // Lighter render
 std::expected<void, UI::RenderErr>
 LeaderboardView::update_and_render(bool const focused,
-                                   std::shared_ptr<ncpp::Plane> p) {
+                                   ncpp::Plane *const p) noexcept {
   auto t = table_info.get_mut();
 
   auto rows = t->table.dim.get_const()->rows;
@@ -205,7 +205,7 @@ LeaderboardView::update_and_render(bool const focused,
 std::expected<void, UI::RenderErr>
 LeaderboardView::always_render(ThreadSafe::LockPair<TableInfo> &&t,
                                bool const focused,
-                               std::shared_ptr<ncpp::Plane> p) {
+                               ncpp::Plane *const p) noexcept {
   auto dim = *t->table.dim.get_const();
 
   // {

@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
-#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -75,44 +74,8 @@ public:
   }
 
   // Templating column index to permit both lvalue and rvalue references
-  void apply_to_plane(std::unique_ptr<ncpp::Plane> &p, size_t const row,
-                      size_t const col) const {
-
-    size_t cur_col = col;
-
-    std::for_each(
-        std::cbegin(str), std::cend(str),
-        [&](std::tuple<std::variant<std::string, std::wstring>, Color,
-                       StyleSet> const &str_tuple) {
-          auto const &str = std::get<0>(str_tuple);
-          Color const &color = std::get<1>(str_tuple);
-          StyleSet const &style = std::get<2>(str_tuple);
-
-          std::visit(
-              [&](auto const &s) {
-                size_t ylen = 1;
-                size_t xlen = s.length();
-                p->putstr(row, cur_col, s.c_str());
-
-                if (color != Color::NONE) {
-                  auto chan = MakeChannels(p, color);
-                  p->stain(row, cur_col, ylen, xlen, chan, chan, chan, chan);
-                }
-
-                if (style.style != static_cast<uint16_t>(Style::NORMAL)) {
-                  p->format(
-                      row, cur_col, ylen, xlen,
-                      static_cast<std::underlying_type_t<Style>>(style.style));
-                }
-
-                cur_col += xlen;
-              },
-              str);
-        });
-  }
-  void apply_to_plane(std::shared_ptr<ncpp::Plane> p, size_t const row,
-                      size_t const col, size_t const padding_to = 0) const {
-
+  void apply_to_plane(ncpp::Plane *const p, size_t const row, size_t const col,
+                      size_t const padding_to_col = 0) const {
     size_t cur_col = col;
 
     std::for_each(
@@ -145,7 +108,7 @@ public:
               str);
         });
 
-    for (; cur_col < padding_to; ++cur_col)
+    for (; cur_col < padding_to_col; ++cur_col)
       p->putc(row, cur_col, ' ');
   }
 
@@ -235,31 +198,5 @@ String operator+(S &&s, S1 &&s1) {
 }
 
 using MultiStr = std::variant<std::string, std::wstring, UI::String>;
-
-struct SimpleTableSketcher {
-  std::shared_ptr<ncpp::Plane> plane;
-  size_t &row;
-
-  SimpleTableSketcher(std::shared_ptr<ncpp::Plane> p, size_t &r)
-      : plane(p), row(r) {};
-
-  template <typename FieldName, typename Field>
-    requires(Core::IsOneOf<std::remove_cvref_t<Field>, UI::String, std::string,
-                           std::wstring> ||
-             requires(Field f) { f.value_or("--"); })
-  void operator()(FieldName const field_name, Field const &field) {
-    UI::String field_val;
-
-    // If the field is an optional, do value_or on it, otherwise just copy it
-    if constexpr (requires { field.value_or("--"); }) {
-      field_val = field.value_or("--");
-    } else {
-      field_val = field;
-    }
-
-    UI::String row_str = UI::String{field_name} + ": " + field_val;
-    row_str.apply_to_plane(plane, row++, 1);
-  }
-};
 
 }; // namespace UI

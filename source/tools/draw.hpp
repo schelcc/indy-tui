@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cmath>
-#include <memory>
 #include <ncpp/CellStyle.hh>
 #include <ncpp/Palette.hh>
 #include <ncpp/Plane.hh>
@@ -22,8 +21,9 @@ enum class BarType {
   SHORT,
 };
 
-static inline std::wstring prog_bar(double pct, size_t chars,
-                                    BarType bar_type = BarType::FULL_HEIGHT) {
+static inline std::wstring
+prog_bar(double const in_pct, size_t const chars,
+         BarType const bar_type = BarType::FULL_HEIGHT) noexcept {
   using namespace Tools::Numeric;
 
   std::wstring complete_char{};
@@ -43,7 +43,7 @@ static inline std::wstring prog_bar(double pct, size_t chars,
   };
   };
 
-  pct = std::min(pct, 1.0);
+  double pct = std::min(in_pct, 1.0);
 
   // Replace all chars up to the incomplete portion with a full block
   double amt = pct * static_cast<double>(chars);
@@ -76,9 +76,9 @@ enum class Target {
   BG,
 };
 
-static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
+static inline uint64_t mask_pal_channels(ncpp::Plane *const p,
                                          Target const target,
-                                         UI::Color const color) {
+                                         UI::Color const color) noexcept {
   uint64_t chan = p->get_channels();
 
   if (color == UI::Color::NONE)
@@ -100,31 +100,31 @@ static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
   return chan;
 }
 
-static inline void set_row_color(std::shared_ptr<ncpp::Plane> p,
-                                 size_t const row, Target const target,
-                                 UI::Color const color) {
+static inline void set_row_color(ncpp::Plane *const p, size_t const row,
+                                 Target const target,
+                                 UI::Color const color) noexcept {
   uint64_t chan = mask_pal_channels(p, target, color);
 
   p->stain(row, 1, 1, p->get_dim_x() - 2, chan, chan, chan, chan);
 }
 
 static inline std::string trunc_str(std::string_view const s,
-                                    size_t const max_len) {
+                                    size_t const max_len) noexcept {
   return s.length() <= (max_len - 3)
              ? std::string{s}
              : std::string{s.substr(0, max_len)} + "...";
 }
 
-static inline void border(std::shared_ptr<ncpp::Plane> p,
-                          UI::Color color = UI::Color::NONE) {
+static inline void border(ncpp::Plane *const p,
+                          UI::Color color = UI::Color::NONE) noexcept {
   auto chan = mask_pal_channels(p, Target::FG, color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, chan, 0);
 }
 
 static inline void
-border_with_title(std::shared_ptr<ncpp::Plane> p, std::string const &name,
-                  UI::Color const pal_color = UI::Color::GRAY_HARD) {
+border_with_title(ncpp::Plane *const p, std::string const &name,
+                  UI::Color const pal_color = UI::Color::GRAY_HARD) noexcept {
   auto color = mask_pal_channels(p, Target::FG, pal_color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, color, 0);

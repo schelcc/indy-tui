@@ -71,8 +71,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         UI::Views::View::MakeView<UI::Views::SessionStatusView>();
 
     sess_status_view->set_render_callback(
-        [this](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
-               bool focused,
+        [this](UI::RenderLevel render_level, ncpp::Plane *const p, bool focused,
                UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
           auto &v = view.as<UI::Views::SessionStatusView>();
 
@@ -85,7 +84,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         UI::Views::View::MakeView<UI::Views::TrackSessionView>();
 
     event_status_view->set_render_callback(
-        [&board](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
+        [&board](UI::RenderLevel render_level, ncpp::Plane *const p,
                  bool focused,
                  UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
           auto &v = view.as<UI::Views::TrackSessionView>();
@@ -98,7 +97,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     leaderboard_view = UI::Views::View::MakeView<UI::Views::LeaderboardView>();
 
     leaderboard_view->set_render_callback(
-        [&board](UI::RenderLevel render_level, std::shared_ptr<ncpp::Plane> p,
+        [&board](UI::RenderLevel render_level, ncpp::Plane *const p,
                  bool focused,
                  UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
           auto &v = view.as<UI::Views::LeaderboardView>();

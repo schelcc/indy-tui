@@ -13,7 +13,7 @@
 namespace Layout {
 
 BlockList::BlockList(Direction d, std::vector<Block> &&blocks)
-    : elements(std::move(blocks)), direction(d), input_handler() {
+    : elements(std::move(blocks)), input_handler(), direction(d) {
   *focused_elem_it.get_mut() = elements.begin();
   init_handler();
 }
@@ -162,7 +162,7 @@ BlockList::render(UI::RenderLevel const render_level,
     operator()(std::shared_ptr<UI::Views::View> &v) {
       auto &render_cb = v->render_callback;
       return render_cb.has_value()
-                 ? (*render_cb)(render_level, b.plane, focused)
+                 ? (*render_cb)(render_level, b.plane.get(), focused)
                  : UI::RenderErr(
                        UI::RenderErr::Source::VIEW, UI::RenderErr::Reason::NOP,
                        "Tried rendering a view with no set render callback.");

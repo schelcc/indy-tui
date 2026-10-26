@@ -32,11 +32,11 @@ struct TrackSessionView {
 
   std::expected<void, RenderErr>
   update_and_render(Telemetry::TrackSession const &, bool const,
-                    std::shared_ptr<ncpp::Plane>);
+                    ncpp::Plane *const) noexcept;
 
   // Lighter render
-  std::expected<void, RenderErr>
-  update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr> update_and_render(bool const,
+                                                   ncpp::Plane *const) noexcept;
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
@@ -49,13 +49,13 @@ struct SessionStatusView {
   static constexpr size_t ROWS = 4;
   static constexpr size_t COLS = 2;
 
-  std::expected<void, RenderErr>
-  update_and_render(Core::Session const &, bool const,
-                    std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr> update_and_render(Core::Session const &,
+                                                   bool const,
+                                                   ncpp::Plane *const) noexcept;
 
   // Lighter render
-  std::expected<void, RenderErr>
-  update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr> update_and_render(bool const,
+                                                   ncpp::Plane *const) noexcept;
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
@@ -104,7 +104,7 @@ struct LeaderboardView {
     std::vector<ColumnInfo> cols;
     std::unordered_set<std::string> user_flagged_drivers;
 
-    TableInfo() : table(), cols(), user_flagged_drivers()  {
+    TableInfo() : table(), cols(), user_flagged_drivers() {
       table.set_dim(Table::Dim(DEFAULT_DRIVER_NUM, 1));
     }
   };
@@ -119,11 +119,11 @@ struct LeaderboardView {
 
   std::expected<void, RenderErr> update_and_render(
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
-      bool const, std::shared_ptr<ncpp::Plane>);
+      bool const, ncpp::Plane *const) noexcept;
 
   // Lighter render
-  std::expected<void, RenderErr>
-  update_and_render(bool const, std::shared_ptr<ncpp::Plane>);
+  std::expected<void, RenderErr> update_and_render(bool const,
+                                                   ncpp::Plane *const) noexcept;
 
   bool take_input(Input::KeyWithMod const &);
 
@@ -138,7 +138,7 @@ private:
   // Logic the same across both renders
   std::expected<void, UI::RenderErr>
   always_render(ThreadSafe::LockPair<TableInfo> &&, bool const,
-                std::shared_ptr<ncpp::Plane>);
+                ncpp::Plane *const) noexcept;
 };
 
 using view_variant =
@@ -149,18 +149,17 @@ struct View : public view_variant {
   using view_variant::operator=;
 
   using RenderCB = std::function<std::expected<void, RenderErr>(
-      UI::RenderLevel, std::shared_ptr<ncpp::Plane>, bool)>;
+      UI::RenderLevel, ncpp::Plane *const, bool)>;
 
   std::optional<RenderCB> render_callback = std::nullopt;
 
   template <typename F>
     requires(std::is_invocable_r_v<std::expected<void, RenderErr>, F,
-                                   UI::RenderLevel,
-                                   std::shared_ptr<ncpp::Plane>, bool, View &>)
+                                   UI::RenderLevel, ncpp::Plane *const, bool,
+                                   View &>)
   void set_render_callback(F &&f) {
     render_callback = [this, f = std::move(f)](
-                          UI::RenderLevel render_level,
-                          std::shared_ptr<ncpp::Plane> p,
+                          UI::RenderLevel render_level, ncpp::Plane *const p,
                           bool focused) -> std::expected<void, RenderErr> {
       return f(render_level, p, focused, *this);
     };

@@ -93,7 +93,7 @@ public:
 
   /** @brief Apply the existing text onto the given plane. Does not synchronize
    * plane access. */
-  void apply(std::shared_ptr<ncpp::Plane>) noexcept;
+  void apply(ncpp::Plane *const) noexcept;
 };
 
 /** @brief Interface widget for table-based information displays. */
@@ -198,10 +198,10 @@ public:
                                                   size_t const = 0) noexcept;
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
-  void apply(std::shared_ptr<ncpp::Plane>) const noexcept;
+  void apply(ncpp::Plane *const) const noexcept;
 
   /** @brief Apply select rows to a plane. Does not synchronize plane access. */
-  void apply_row(std::shared_ptr<ncpp::Plane>, size_t const) const noexcept;
+  void apply_row(ncpp::Plane *const, size_t const) const noexcept;
 
   /** @brief Set the string at the specified row and column to the given value.
    * Cell must be within the table's current dimensions. Returns expected
@@ -258,8 +258,8 @@ struct _Widget : std::variant<Ts...> {
   using std::variant<Ts...>::variant;
   using std::variant<Ts...>::operator=;
 
-  std::optional<std::function<void(std::shared_ptr<ncpp::Plane>)>>
-      render_callback = std::nullopt;
+  std::optional<std::function<void(ncpp::Plane *const)>> render_callback =
+      std::nullopt;
 
   template <typename T, typename Self>
     requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
@@ -284,11 +284,9 @@ struct _Widget : std::variant<Ts...> {
   }
 
   template <typename F>
-    requires(std::is_invocable_r_v<void, F, std::shared_ptr<ncpp::Plane>>)
+    requires(std::is_invocable_r_v<void, F, ncpp::Plane *const>)
   void set_render_callback(F &&f) {
-    render_callback = [f = std::move(f)](std::shared_ptr<ncpp::Plane> p) {
-      f(p);
-    };
+    render_callback = [f = std::move(f)](ncpp::Plane *const p) { f(p); };
   }
 };
 

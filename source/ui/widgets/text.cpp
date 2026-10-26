@@ -19,7 +19,7 @@ void Text::clear() noexcept {
   text = "";
 }
 
-void Text::apply(std::shared_ptr<ncpp::Plane> p) noexcept {
+void Text::apply(ncpp::Plane *const p) noexcept {
   std::shared_lock lock(_mtx);
 
   text.apply_to_plane(p, 1, 1);

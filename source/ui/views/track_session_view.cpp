@@ -28,7 +28,7 @@ TrackSessionView::TrackSessionView() : table() {
 std::expected<void, UI::RenderErr>
 TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
                                     bool const focused,
-                                    std::shared_ptr<ncpp::Plane> p) {
+                                    ncpp::Plane *const p) noexcept {
 
   UI::String flag =
       UI::String(sess.flag_status.get_const()
@@ -73,7 +73,7 @@ TrackSessionView::update_and_render(Telemetry::TrackSession const &sess,
 
 std::expected<void, UI::RenderErr>
 TrackSessionView::update_and_render(bool const focused,
-                                    std::shared_ptr<ncpp::Plane> p) {
+                                    ncpp::Plane *const p) noexcept {
   Tools::Draw::border_with_title(
       p, "Event Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 

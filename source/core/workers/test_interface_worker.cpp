@@ -45,7 +45,7 @@ void TestInterfaceWorker::operator()(std::stop_token stop_tok) {
     // Update column values
     res = table.update_col(1, 1, {cnt, cnt / 5, cnt / 10});
 
-    table.apply(std_plane);
+    table.apply(std_plane.get());
 
     nc.render();
 

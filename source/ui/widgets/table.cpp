@@ -345,7 +345,7 @@ std::expected<void, WidgetErr> Table::clear_at(size_t const row,
   return {};
 }
 
-void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
+void Table::apply(ncpp::Plane *const p) const noexcept {
   std::shared_lock lock(_mtx);
 
   size_t col_pos = 1;
@@ -373,8 +373,7 @@ void Table::apply(std::shared_ptr<ncpp::Plane> p) const noexcept {
   }
 }
 
-void Table::apply_row(std::shared_ptr<ncpp::Plane> p,
-                      size_t const row) const noexcept {
+void Table::apply_row(ncpp::Plane *const p, size_t const row) const noexcept {
   std::shared_lock lock(_mtx);
 
   size_t idx = 0;
