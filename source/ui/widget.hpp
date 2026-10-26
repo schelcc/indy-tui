@@ -158,13 +158,15 @@ public:
   ThreadSafe::Locked<Dim> dim;
 
   // Methods
+  /** @brief Try to handle the given input, returning true if the
+  input was used. */
   bool take_input(Input::KeyWithMod &);
 
   /** @brief Set the table's dimensions. Fully clears the table. */
   void set_dim(Dim const &) noexcept;
 
-  /** @brief Access a column's properties. Throws if column is not within range.
-   */
+  /** @brief Access a column's properties. Throws if column is not
+   * within range. */
   ThreadSafe::LockPair<Column::Props> column_props(size_t const);
 
   /** @brief Retrieve the backing key associated with the given row. Requires

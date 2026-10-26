@@ -43,6 +43,8 @@ enum class Style : uint16_t {
   UNDERCURL = static_cast<uint16_t>(ncpp::CellStyle::Undercurl),
 };
 
+enum class FocusDirection { NEXT, PREV };
+
 enum class RenderLevel { LIGHT, FULL };
 
 struct RenderErr {
