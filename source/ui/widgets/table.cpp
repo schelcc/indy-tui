@@ -1,12 +1,17 @@
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <expected>
+#include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <mutex>
 
 #include <ncpp/Plane.hh>
+#include <ranges>
 #include <stdexcept>
 #include <unordered_set>
+#include <vector>
 
 #include "app_context.hpp"
 #include "tools/locked.hpp"
@@ -17,7 +22,9 @@
 
 namespace UI {
 
-void Table::Column::recalculate_width(UI::String const &default_str) {
+bool Table::Column::recalculate_width(UI::String const &default_str) {
+
+  auto pre_width = max_width;
 
   max_width = default_str.size();
 
@@ -28,6 +35,35 @@ void Table::Column::recalculate_width(UI::String const &default_str) {
 
   // Never let max_width be zero
   max_width = (max_width > 0) ? max_width : 1;
+
+  return max_width != pre_width;
+}
+
+bool Table::Column::recalculate_width(size_t const check_width) {
+  auto pre_width = max_width;
+
+  max_width = std::max(check_width, max_width);
+
+  return max_width != pre_width;
+}
+
+void Table::rebuild_columns() noexcept {
+  App::AppContext::Log().debug("Rebuilding table columns");
+
+  _col_planes.clear();
+  _col_planes.reserve(_table.size());
+
+  size_t x_off = 1 + padding_left;
+  size_t const y_off = 1 + padding_top;
+  size_t const ylen = _plane->get_dim_y() - y_off;
+  size_t const col_sep = column_sep.load();
+
+  for (auto &col : _table) {
+    _col_planes.emplace_back(_plane, ylen, col.max_width, y_off, x_off);
+    x_off += col.max_width + col_sep;
+  }
+
+  _col_planes.shrink_to_fit();
 }
 
 void Table::set_dim(Table::Dim const &d) noexcept {
@@ -43,9 +79,7 @@ void Table::set_dim(Table::Dim const &d) noexcept {
                                d.cols);
 
   std::unique_lock lock(_mtx);
-  _table = std::vector<Column>(
-      d.cols,
-      Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
+  _table = std::vector<Column>(d.cols, d.rows);
 
   *old_dim = d;
 
@@ -69,7 +103,9 @@ std::expected<void, WidgetErr> Table::set_at(size_t const row, size_t const col,
 
   std::unique_lock lock(_mtx);
 
-  _table.at(col).max_width = std::max(_table.at(col).max_width, str.size());
+  _needs_rebuild =
+      _table.at(col).recalculate_width(str.size()) || _needs_rebuild;
+
   _table.at(col).rows.at(row) = std::move(str);
 
   return {};
@@ -214,12 +250,12 @@ Table::update_row(size_t const row,
 
   size_t col_idx = 0;
   for (std::optional<UI::String> s : std::move(new_row)) {
-    _table.at(col_idx).max_width = std::max(
-        _table.at(col_idx).max_width, s.transform([](UI::String const &_s) {
-                                         return _s.size();
-                                       }).value_or(0));
+    auto &target_col = _table.at(col_idx);
 
-    _table.at(col_idx).rows.at(row) = std::move(s);
+    _needs_rebuild =
+        target_col.recalculate_width(s.value_or(empty_cell)) || _needs_rebuild;
+
+    target_col.rows.at(row) = std::move(s);
 
     col_idx++;
   }
@@ -251,12 +287,12 @@ Table::update_row(size_t const row, size_t const col_offset,
 
   size_t col_idx = col_offset;
   for (std::optional<UI::String> s : std::move(new_row)) {
-    _table.at(col_idx).max_width = std::max(
-        _table.at(col_idx).max_width, s.transform([](UI::String const &_s) {
-                                         return _s.size();
-                                       }).value_or(0));
+    auto &target_col = _table.at(col_idx);
 
-    _table.at(col_idx).rows.at(row) = std::move(s);
+    _needs_rebuild =
+        target_col.recalculate_width(s.value_or(empty_cell)) || _needs_rebuild;
+
+    target_col.rows.at(row) = std::move(s);
 
     col_idx++;
   }
@@ -291,7 +327,8 @@ Table::update_col(size_t const col,
 
   _table.at(col).rows = std::move(new_col);
 
-  _table.at(col).recalculate_width(empty_cell);
+  _needs_rebuild =
+      _table.at(col).recalculate_width(empty_cell) || _needs_rebuild;
 
   return {};
 }
@@ -324,7 +361,8 @@ Table::update_col(size_t const col, size_t const row_offset,
   std::move(std::begin(new_col), std::end(new_col),
             std::begin(_table.at(col).rows) + static_cast<long>(row_offset));
 
-  _table.at(col).recalculate_width(empty_cell);
+  _needs_rebuild =
+      _table.at(col).recalculate_width(empty_cell) || _needs_rebuild;
 
   return {};
 }
@@ -363,7 +401,7 @@ void Table::update_baseplane(ncpp::Plane *const p) noexcept {
 }
 
 std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
-  std::shared_lock lock(_mtx);
+  std::unique_lock lock(_mtx);
 
   if (_plane != p)
     update_baseplane(p);
@@ -373,36 +411,44 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
         UI::RenderErr::Source::WIDGET, UI::RenderErr::NULL_PLANE,
         "Tried to apply table when table's internal plane is null");
 
-  size_t col_pos = 1;
-  size_t idx = 0;
-  for (auto const &col : _table) {
-    size_t row_offset = 1;
+  if (_needs_rebuild)
+    rebuild_columns();
 
-    size_t padding_to_col =
-        col_pos + col.max_width +
-        ((idx++ == (_table.size() - 1)) ? 0ul : column_sep.load());
+  for (size_t col_idx = 0; col_idx < _table.size(); ++col_idx) {
+    auto &col = _table.at(col_idx);
+    auto &plane = _col_planes.at(col_idx);
+
+    size_t row_offset = 0;
 
     for (auto const &row : col.rows) {
       auto row_s = row.value_or(empty_cell);
 
-      size_t x = (col.props.align == Align::LEFT)
-                     ? col_pos
-                     : (col_pos + ((col.props.align == Align::RIGHT)
-                                       ? (col.max_width - row_s.size())
-                                       : ((col.max_width - row_s.size()) / 2)));
+      size_t x;
 
-      row_s.apply_to_plane(_plane, row_offset, x, padding_to_col);
+      switch (col.props.align) {
+      case Align::LEFT:
+        x = 0;
+        break;
+      case Align::CENTER:
+        x = (col.max_width - row_s.size()) / 2;
+        break;
+      case Align::RIGHT:
+        x = (col.max_width - row_s.size());
+        break;
+      }
+
+      row_s.apply_to_plane(&plane, row_offset, x);
+
       row_offset++;
     }
-    col_pos += (col.max_width + column_sep);
   }
 
   return {};
 }
 
-std::expected<void, UI::RenderErr> Table::apply_row(ncpp::Plane *const p,
-                                                    size_t const row) noexcept {
-  std::shared_lock lock(_mtx);
+std::expected<void, UI::RenderErr>
+Table::apply_row(ncpp::Plane *const p, size_t const row_idx) noexcept {
+  std::unique_lock lock(_mtx);
 
   if (_plane != p)
     update_baseplane(p);
@@ -410,26 +456,31 @@ std::expected<void, UI::RenderErr> Table::apply_row(ncpp::Plane *const p,
   if (_plane == nullptr)
     return UI::RenderErr(
         UI::RenderErr::Source::WIDGET, UI::RenderErr::NULL_PLANE,
-        "Tried to apply table when table's internal plane is null");
+        "Tried to apply table row when table's internal plane is null");
 
-  size_t idx = 0;
-  size_t col_pos = 1;
-  for (auto const &col : _table) {
+  if (_needs_rebuild)
+    rebuild_columns();
 
-    size_t padding_to_col =
-        col_pos + col.max_width +
-        ((idx++ == (_table.size() - 1)) ? 0ul : column_sep.load());
+  for (std::pair<Column &, ncpp::Plane &> col_pair :
+       std::ranges::zip_view(_table, _col_planes)) {
+    auto &[col, plane] = col_pair;
+    auto row_s = col.rows.at(row_idx).value_or(empty_cell);
+    size_t x;
 
-    auto row_s = col.rows.at(row).value_or(empty_cell);
+    switch (col.props.align) {
+    case Align::LEFT:
+      x = 0;
+      row_s.apply_to_plane(&plane, row_idx, 0, col.max_width);
+      break;
+    case Align::CENTER:
+      x = (col.max_width - row_s.size()) / 2;
+      break;
+    case Align::RIGHT:
+      x = (col.max_width - row_s.size());
+      break;
+    }
 
-    size_t x = (col.props.align == Align::LEFT)
-                   ? col_pos
-                   : (col_pos + ((col.props.align == Align::RIGHT)
-                                     ? (col.max_width - row_s.size())
-                                     : ((col.max_width - row_s.size()) / 2)));
-
-    row_s.apply_to_plane(_plane, row + 1, x, padding_to_col);
-    col_pos += (col.max_width + column_sep);
+    row_s.apply_to_plane(&plane, row_idx, x, col.max_width);
   }
 
   return {};
@@ -438,9 +489,6 @@ std::expected<void, UI::RenderErr> Table::apply_row(ncpp::Plane *const p,
 void Table::clear() noexcept {
   auto d = *dim.get_const();
   std::unique_lock lock(_mtx);
-  _table = std::vector<Column>(
-      d.cols,
-      Column(std::vector<std::optional<UI::String>>(d.rows, std::nullopt)));
+  _table = std::vector<Column>(d.cols, d.rows);
 }
-
 }; // namespace UI

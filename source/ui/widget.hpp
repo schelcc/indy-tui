@@ -5,6 +5,7 @@
 #include <execution>
 #include <expected>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <ranges>
 #include <shared_mutex>
@@ -24,8 +25,6 @@
 #include "ui/string.hpp"
 
 namespace UI {
-
-enum class Align { LEFT, CENTER, RIGHT };
 
 struct WidgetErr {
   enum Kind {
@@ -115,12 +114,21 @@ public:
     std::vector<std::optional<UI::String>> rows;
     size_t max_width = 1;
 
+    /// @brief The x coordinate for this column in the table's plane
+    size_t start_x = 0;
+
     struct Props {
       Align align = Align::LEFT;
+      RightBorder right_border_rule = RightBorder::ALLOW;
     } props{};
 
-    /** @brief Recalculate this column's max_width. */
-    void recalculate_width(UI::String const &);
+    /** @brief Recalculate this column's max_width. Returns bool indicating
+     * whether the max width value changed. */
+    bool recalculate_width(UI::String const &);
+    bool recalculate_width(size_t const);
+
+    /** @brief Construct a column with the provided number of rows. */
+    Column(size_t const num_rows) : rows(num_rows, std::nullopt) {}
   };
 
 private:
@@ -128,6 +136,14 @@ private:
 
   // Columns of rows
   std::vector<Column> _table{};
+  std::vector<ncpp::Plane> _col_planes{};
+
+  /// @brief Tracks whether a rebuild of the table's column planes is
+  /// required. Set true whenever a call to
+  /// Column::recalculate_width() results in a changed max_width. If
+  /// column rebuild become frequent and costly, could later track the
+  /// first "damaged" column to start at, but not sure it's necessary.
+  bool _needs_rebuild = true;
 
   // Coooooould use std::any here and require caller to provide the type when
   // resolving backing keys, but seems like overkill
@@ -147,6 +163,10 @@ private:
    * access, as should only be called when a lock is already acquired. */
   void update_baseplane(ncpp::Plane *const p) noexcept;
 
+  /** @brief Rebuild the table's column planes, starting at the first column.
+   * Does not synchronize access. */
+  void rebuild_columns() noexcept;
+
 public:
   // Properties
 
@@ -155,6 +175,12 @@ public:
 
   /// @brief Spacing between rows, defaults to 0
   std::atomic_uint8_t row_sep = 1;
+
+  /// @brief Space above the first row rendered. Defaults 0.
+  std::atomic_size_t padding_top = 0;
+
+  /// @brief Space to the left of the first column rendered. Defaults 0.
+  std::atomic_size_t padding_left = 0;
 
   /// @brief Empty cell representation, defaults to "--"
   UI::String empty_cell = "--";
@@ -169,7 +195,7 @@ public:
 
   // Methods
   /** @brief Try to handle the given input, returning true if the
-  input was used. */
+   * input was used. */
   bool take_input(Input::KeyWithMod &);
 
   /** @brief Set the table's dimensions. Fully clears the table. */
