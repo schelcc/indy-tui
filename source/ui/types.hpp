@@ -32,6 +32,29 @@ enum class Color {
   NONE = 16,
 };
 
+// enum class FocusState { INIT, FOCUSED, UNFOCUSED };
+struct FocusState {
+  enum State { INIT, FOCUSED, UNFOCUSED } state;
+
+  [[nodiscard]] operator bool() const noexcept { return state == FOCUSED; }
+
+  [[nodiscard]] bool operator==(FocusState const &o) const noexcept {
+    return o.state == state;
+  }
+
+  [[nodiscard]] bool operator==(State const &s) const noexcept {
+    return state == s;
+  }
+
+  FocusState() = default;
+  FocusState(State const s) : state(s) {}
+  FocusState(bool const b) : state(b ? FOCUSED : UNFOCUSED) {}
+};
+
+enum class Align { LEFT, CENTER, RIGHT };
+
+enum class RightBorder { ALLOW, DENY };
+
 enum class Target { FOREGROUND, BACKGROUND };
 
 enum class Style : uint16_t {
@@ -44,6 +67,7 @@ enum class Style : uint16_t {
 };
 
 enum class FocusDirection { NEXT, PREV };
+using CursorDirection = FocusDirection;
 
 enum class RenderLevel { LIGHT, FULL };
 

@@ -31,16 +31,19 @@ struct TrackSessionView {
   static constexpr size_t COLS = 3;
 
   std::expected<void, RenderErr>
-  update_and_render(Telemetry::TrackSession const &, bool const,
+  update_and_render(Telemetry::TrackSession const &, FocusState const,
                     ncpp::Plane *const) noexcept;
 
   // Lighter render
-  std::expected<void, RenderErr> update_and_render(bool const,
+  std::expected<void, RenderErr> update_and_render(FocusState const,
                                                    ncpp::Plane *const) noexcept;
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
   TrackSessionView();
+
+private:
+  FocusState _prev_focus = FocusState::INIT;
 };
 
 struct SessionStatusView {
@@ -50,16 +53,19 @@ struct SessionStatusView {
   static constexpr size_t COLS = 2;
 
   std::expected<void, RenderErr> update_and_render(Core::Session const &,
-                                                   bool const,
+                                                   FocusState const,
                                                    ncpp::Plane *const) noexcept;
 
   // Lighter render
-  std::expected<void, RenderErr> update_and_render(bool const,
+  std::expected<void, RenderErr> update_and_render(FocusState const,
                                                    ncpp::Plane *const) noexcept;
 
   bool take_input([[maybe_unused]] Input::KeyWithMod const &k) { return false; }
 
   SessionStatusView();
+
+private:
+  FocusState _prev_focus = FocusState::INIT;
 };
 
 struct LeaderboardView {
@@ -104,7 +110,7 @@ struct LeaderboardView {
     std::vector<ColumnInfo> cols;
     std::unordered_set<std::string> user_flagged_drivers;
 
-    TableInfo() : table(), cols(), user_flagged_drivers() {
+    TableInfo() : table("leaderboard"), cols(), user_flagged_drivers() {
       table.set_dim(Table::Dim(DEFAULT_DRIVER_NUM, 1));
     }
   };
@@ -119,10 +125,10 @@ struct LeaderboardView {
 
   std::expected<void, RenderErr> update_and_render(
       ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
-      bool const, ncpp::Plane *const) noexcept;
+      FocusState const, ncpp::Plane *const) noexcept;
 
   // Lighter render
-  std::expected<void, RenderErr> update_and_render(bool const,
+  std::expected<void, RenderErr> update_and_render(FocusState const,
                                                    ncpp::Plane *const) noexcept;
 
   bool take_input(Input::KeyWithMod const &);
@@ -133,11 +139,13 @@ private:
   ThreadSafe::Locked<std::vector<ColumnInfo>> _cols;
   ThreadSafe::Locked<size_t> _num_drivers;
 
+  FocusState _prev_focus = FocusState::INIT;
+
   void reconstruct_table(ThreadSafe::LockPair<TableInfo> &&) noexcept;
 
   // Logic the same across both renders
   std::expected<void, UI::RenderErr>
-  always_render(ThreadSafe::LockPair<TableInfo> &&, bool const,
+  always_render(ThreadSafe::LockPair<TableInfo> &&, FocusState const,
                 ncpp::Plane *const) noexcept;
 };
 
@@ -149,18 +157,19 @@ struct View : public view_variant {
   using view_variant::operator=;
 
   using RenderCB = std::function<std::expected<void, RenderErr>(
-      UI::RenderLevel, ncpp::Plane *const, bool)>;
+      UI::RenderLevel, ncpp::Plane *const, FocusState const)>;
 
   std::optional<RenderCB> render_callback = std::nullopt;
 
   template <typename F>
     requires(std::is_invocable_r_v<std::expected<void, RenderErr>, F,
-                                   UI::RenderLevel, ncpp::Plane *const, bool,
-                                   View &>)
+                                   UI::RenderLevel, ncpp::Plane *const,
+                                   FocusState const, View &>)
   void set_render_callback(F &&f) {
-    render_callback = [this, f = std::move(f)](
-                          UI::RenderLevel render_level, ncpp::Plane *const p,
-                          bool focused) -> std::expected<void, RenderErr> {
+    render_callback =
+        [this, f = std::move(f)](
+            UI::RenderLevel render_level, ncpp::Plane *const p,
+            FocusState const focused) -> std::expected<void, RenderErr> {
       return f(render_level, p, focused, *this);
     };
   }

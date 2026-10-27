@@ -133,21 +133,22 @@ BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
     // Note: If the renderee needs to have some block state information, this
     // might be a chance to pass it in, in which case this should be a visit.
     // Case for async?
-    auto res = b.element.visit(Core::Overload{
-        [&b](BlockList &l) -> std::expected<void, UI::RenderErr> {
-          // Not sure why I change what plane is handed to blocklists, but
-          // that's what I had so I'm leaving it for now.
-          return l.solve((l.parent == nullptr) ? b.plane : nullptr);
-        },
-        []([[maybe_unused]] std::shared_ptr<UI::Views::View> &v)
-            -> std::expected<void, UI::RenderErr> {
-          // Will eventually need to do something here, but for now don't.
-          return {};
-        },
-    });
-
-    if (!res.has_value())
-      return res;
+    if (std::holds_alternative<BlockList>(b.element)) {
+      BlockList &l = std::get<BlockList>(b.element);
+      TRY_DROP(l.solve((l.parent == nullptr) ? b.plane : nullptr));
+    }
+    // auto res = b.element.visit(Core::Overload{
+    //     [&b](BlockList &l) -> std::expected<void, UI::RenderErr> {
+    //       // Not sure why I change what plane is handed to blocklists, but
+    //       // that's what I had so I'm leaving it for now.
+    //       return l.solve((l.parent == nullptr) ? b.plane : nullptr);
+    //     },
+    //     []([[maybe_unused]] std::shared_ptr<UI::Views::View> &v)
+    //         -> std::expected<void, UI::RenderErr> {
+    //       // Will eventually need to do something here, but for now don't.
+    //       return {};
+    //     },
+    // });
   }
 
   return {};
@@ -155,27 +156,7 @@ BlockList::solve(std::shared_ptr<ncpp::Plane> p) {
 
 std::expected<void, UI::RenderErr>
 BlockList::render(UI::RenderLevel const render_level,
-                  bool const parent_focused) {
-  struct Vis {
-    Block &b;
-    bool focused;
-    UI::RenderLevel render_level;
-
-    std::expected<void, UI::RenderErr>
-    operator()(std::shared_ptr<UI::Views::View> &v) {
-      auto &render_cb = v->render_callback;
-      return render_cb.has_value()
-                 ? (*render_cb)(render_level, b.plane.get(), focused)
-                 : UI::RenderErr(
-                       UI::RenderErr::Source::VIEW, UI::RenderErr::Reason::NOP,
-                       "Tried rendering a view with no set render callback.");
-    }
-
-    std::expected<void, UI::RenderErr> operator()(BlockList &l) {
-      return l.render(render_level, focused);
-    }
-  };
-
+                  UI::FocusState const parent_focused) {
   std::unique_lock lock(m);
 
   if (parent == nullptr)
@@ -185,24 +166,52 @@ BlockList::render(UI::RenderLevel const render_level,
 
   // Render only focused child if it's a light render
   if (render_level == UI::RenderLevel::LIGHT) {
-    auto it = *focused_elem_it.get_mut();
-    return it->element.visit(Vis{*it, true, render_level});
-  }
+    if (parent_focused != UI::FocusState::FOCUSED)
+      return {};
 
-  // Optimization note: Potentially move rendering out to thread
-  // pools? Have leaf blocks be able to dispatch to them? If we are
-  // already gonna have the widgets hold on to render callbacks, can't
-  // imagine it's too bad.
-  std::expected<void, UI::RenderErr> res;
+    auto it = *focused_elem_it.get_mut();
+
+    /*
+    NOTE - After profiling, it seems the visitor dispatch for these
+    two-state variants was a bit much. At least more costly than this
+    simple conditional. Might do some fun with a switch and a
+    consteval for readability idk.
+    */
+
+    if (std::holds_alternative<BlockList>(it->element)) {
+      TRY_DROP(std::get<BlockList>(it->element)
+                   .render(render_level, UI::FocusState::FOCUSED));
+    } else {
+      auto &render_cb = std::get<std::shared_ptr<UI::Views::View>>(it->element)
+                            ->render_callback;
+      if (render_cb.has_value()) {
+        TRY_DROP(std::invoke(render_cb.value(), render_level, it->plane.get(),
+                             UI::FocusState::FOCUSED));
+      } else
+        return UI::RenderErr(
+            UI::RenderErr::Source::VIEW, UI::RenderErr::NOP,
+            "Tried rendering a view with no set render callback");
+    }
+  }
 
   auto focused_elem = focused_elem_it.get_const();
 
   for (auto it = elements.begin(); it < elements.end(); it++) {
-    res = it->element.visit(
-        Vis{*it, (parent_focused && (it == *focused_elem)), render_level});
+    UI::FocusState focus_state = (parent_focused && (it == *focused_elem));
 
-    if (!res.has_value())
-      return res;
+    if (std::holds_alternative<BlockList>(it->element)) {
+      TRY_DROP(
+          std::get<BlockList>(it->element).render(render_level, focus_state));
+    } else {
+      auto &render_cb = std::get<std::shared_ptr<UI::Views::View>>(it->element)
+                            ->render_callback;
+      if (render_cb.has_value()) {
+        TRY_DROP((*render_cb)(render_level, it->plane.get(), focus_state));
+      } else
+        return UI::RenderErr(
+            UI::RenderErr::Source::VIEW, UI::RenderErr::NOP,
+            "Tried rendering a view with no set render callback");
+    }
   }
 
   return {};

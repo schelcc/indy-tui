@@ -21,6 +21,8 @@
 #include "ui/views.hpp"
 #include "ui/widget.hpp"
 
+#include <valgrind/callgrind.h>
+
 using Telemetry::SessionType;
 
 namespace Workers {
@@ -71,7 +73,8 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
         UI::Views::View::MakeView<UI::Views::SessionStatusView>();
 
     sess_status_view->set_render_callback(
-        [this](UI::RenderLevel render_level, ncpp::Plane *const p, bool focused,
+        [this](UI::RenderLevel render_level, ncpp::Plane *const p,
+               UI::FocusState const focused,
                UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
           auto &v = view.as<UI::Views::SessionStatusView>();
 
@@ -85,7 +88,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     event_status_view->set_render_callback(
         [&board](UI::RenderLevel render_level, ncpp::Plane *const p,
-                 bool focused,
+                 UI::FocusState const focused,
                  UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
           auto &v = view.as<UI::Views::TrackSessionView>();
 
@@ -98,7 +101,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     leaderboard_view->set_render_callback(
         [&board](UI::RenderLevel render_level, ncpp::Plane *const p,
-                 bool focused,
+                 UI::FocusState const focused,
                  UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
           auto &v = view.as<UI::Views::LeaderboardView>();
 
@@ -253,7 +256,10 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
     {
       auto lock = render_mtx.lock_shared();
 
-      render_res = root_layout.render(render_level, true);
+      // CALLGRIND_START_INSTRUMENTATION;
+      // CALLGRIND_TOGGLE_COLLECT;
+      render_res = root_layout.render(render_level, UI::FocusState::FOCUSED);
+      // CALLGRIND_STOP_INSTRUMENTATION;
 
       if (!render_res.has_value()) {
         UI::RenderErr &e = render_res.error();

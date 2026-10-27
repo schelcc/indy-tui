@@ -9,6 +9,7 @@
 #include <memory>
 #include <ranges>
 #include <shared_mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -117,6 +118,11 @@ public:
     /// @brief The x coordinate for this column in the table's plane
     size_t start_x = 0;
 
+    /// @brief Whether this column needs to be re-drawn. For now, if
+    /// column is written to at all, regardless of which rows might
+    /// have changed.
+    bool damaged = true;
+
     struct Props {
       Align align = Align::LEFT;
       RightBorder right_border_rule = RightBorder::ALLOW;
@@ -159,6 +165,12 @@ private:
   /// not thread safe.
   ncpp::Plane *_plane = nullptr;
 
+  /// @brief The table's cursor. Only used if draw_cursor is set.
+  std::atomic_size_t _cursor_pos = 0;
+
+  std::pair<size_t, size_t> _last_drawn_cursor = {
+      std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
+
   /** @brief Update the base plane to the given plane. Does not synchronize
    * access, as should only be called when a lock is already acquired. */
   void update_baseplane(ncpp::Plane *const p) noexcept;
@@ -185,18 +197,41 @@ public:
   /// @brief Empty cell representation, defaults to "--"
   UI::String empty_cell = "--";
 
+  /// @brief Rows for the cursor to skip. Defaults empty, only used if
+  /// draw_cursor is set.
+  ThreadSafe::Locked<std::unordered_set<size_t>> cursor_skip_rows{};
+
+  /// @brief Row indices after which to draw separators, if drawing border. Only
+  /// used if draw_border is set. Separator rows are unavailable to the cursor,
+  /// and should not be added to the cursor's skip rows.
+  ThreadSafe::Locked<std::unordered_set<size_t>> separator_rows{};
+
   /// @brief Whether to disable backing keys. To attempt to retrieve
   /// backing keys when this is set is an error.
   std::atomic_flag no_backing_keys = true;
+
+  /// @brief Whether to render the table's cursor.
+  std::atomic_flag draw_cursor = false;
+
+  /// @brief Whether to draw the table's border.
+  std::atomic_flag draw_border = false;
 
   /// @brief The table's current dimensions. Should not be modified externally.
   /// Just don't do it please.
   ThreadSafe::Locked<Dim> dim;
 
+  /// @brief Name to identify the plane in debugging.
+  std::string const name = "(no name)";
+
   // Methods
   /** @brief Try to handle the given input, returning true if the
    * input was used. */
   bool take_input(Input::KeyWithMod &);
+
+  /** @brief Move the table's cursor one row in the given direction,
+   * skipping any rows indicated by `cursor_skip_rows`. Does nothing
+   * if `draw_cursor` is not set. */
+  void move_cursor(UI::CursorDirection const) noexcept;
 
   /** @brief Set the table's dimensions. Fully clears the table. */
   void set_dim(Dim const &) noexcept;
@@ -232,6 +267,9 @@ public:
    * be set. */
   std::expected<void, WidgetErr> set_backing_keys(std::vector<std::string> &&,
                                                   size_t const = 0) noexcept;
+
+  /** Force the next render to render all columns. */
+  void damage_all() noexcept;
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
   std::expected<void, UI::RenderErr> apply(ncpp::Plane *const) noexcept;
@@ -287,6 +325,7 @@ public:
   void clear() noexcept;
 
   Table() = default;
+  Table(std::string &&s) : name(std::move(s)) {}
 };
 
 template <typename... Ts>

@@ -5,6 +5,7 @@
 
 #include "tools/draw.hpp"
 
+#include "types.hpp"
 #include "ui/views.hpp"
 #include "ui/widget.hpp"
 
@@ -12,7 +13,7 @@ using UI::Table;
 
 namespace UI::Views {
 
-SessionStatusView::SessionStatusView() : table() {
+SessionStatusView::SessionStatusView() : table("session-status") {
   table.set_dim(Table::Dim(ROWS, COLS));
   table.column_sep = 2;
   table.empty_cell = "";
@@ -23,7 +24,7 @@ SessionStatusView::SessionStatusView() : table() {
 
 std::expected<void, UI::RenderErr>
 SessionStatusView::update_and_render(Core::Session const &sess,
-                                     bool const focused,
+                                     FocusState const focused,
                                      ncpp::Plane *const p) noexcept {
   UI::String delay_s = "--";
   auto delay_res = sess.get_delay_sec();
@@ -59,17 +60,23 @@ SessionStatusView::update_and_render(Core::Session const &sess,
   if (res.has_value())
     TRY_DROP(table.apply(p));
 
-  Tools::Draw::border_with_title(
-      p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+  if (_prev_focus != focused)
+    Tools::Draw::border_with_title(
+        p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+
+  _prev_focus = focused;
 
   return {};
 }
 
 std::expected<void, UI::RenderErr>
-SessionStatusView::update_and_render(bool const focused,
+SessionStatusView::update_and_render(FocusState const focused,
                                      ncpp::Plane *const p) noexcept {
-  Tools::Draw::border_with_title(
-      p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+  if (_prev_focus != focused)
+    Tools::Draw::border_with_title(
+        p, "Session Status", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+
+  _prev_focus = focused;
 
   return {};
 }

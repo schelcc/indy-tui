@@ -45,7 +45,8 @@ struct BlockList {
 
   /** @brief Render this plane with the given render level and is-focused
    * status. */
-  std::expected<void, UI::RenderErr> render(UI::RenderLevel const, bool const);
+  std::expected<void, UI::RenderErr> render(UI::RenderLevel const,
+                                            UI::FocusState const);
 
   /** @brief Handle the given input. If the BlockList does not have an action
    * for the provided input, it is forwarded to the currently focused element.

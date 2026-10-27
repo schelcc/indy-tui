@@ -8,6 +8,7 @@
 #include <notcurses/notcurses.h>
 #include <string_view>
 
+#include "app_context.hpp"
 #include "tools/numeric.hpp"
 #include "ui/types.hpp"
 
@@ -125,6 +126,7 @@ static inline void border(ncpp::Plane *const p,
 static inline void
 border_with_title(ncpp::Plane *const p, std::string const &name,
                   UI::Color const pal_color = UI::Color::GRAY_HARD) noexcept {
+  App::AppContext::Log().debug("Drawing border with title \"{}\"", name);
   auto color = mask_pal_channels(p, Target::FG, pal_color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, color, 0);

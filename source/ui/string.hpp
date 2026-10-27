@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -49,10 +50,17 @@ private:
     StyleSet() : style(static_cast<uint16_t>(UI::Style::NORMAL)) {};
   };
 
+  struct Triple {
+    std::variant<std::string, std::wstring> str_var;
+    Color color;
+    StyleSet style_set;
+  };
+
 public:
-  std::vector<
-      std::tuple<std::variant<std::string, std::wstring>, Color, StyleSet>>
-      str{};
+  // std::vector<
+  //     std::tuple<std::variant<std::string, std::wstring>, Color, StyleSet>>
+  //     str{};
+  std::vector<Triple> str{};
 
   [[nodiscard]] size_t size() const noexcept { return size_; }
 
@@ -78,35 +86,30 @@ public:
                       size_t const padding_to_col = 0) const {
     size_t cur_col = col;
 
-    std::for_each(
-        std::cbegin(str), std::cend(str),
-        [&](std::tuple<std::variant<std::string, std::wstring>, Color,
-                       StyleSet> const &str_tuple) {
-          auto const &str = std::get<0>(str_tuple);
-          Color const &color = std::get<1>(str_tuple);
-          StyleSet const &style = std::get<2>(str_tuple);
+    for (auto const &[str_var, color, style] : str) {
+      size_t ylen = 1;
+      size_t xlen;
 
-          std::visit(
-              [&](auto const &s) {
-                size_t ylen = 1;
-                size_t xlen = s.length();
-                p->putstr(row, cur_col, s.c_str());
+      if (std::holds_alternative<std::string>(str_var)) {
+        auto &s = std::get<std::string>(str_var);
+        xlen = s.length();
+        p->putstr(row, cur_col, s.c_str());
+      } else {
+        auto &s = std::get<std::wstring>(str_var);
+        xlen = s.length();
+        p->putstr(row, cur_col, s.c_str());
+      }
 
-                if (color != Color::NONE) {
-                  auto chan = MakeChannels(p, color);
-                  p->stain(row, cur_col, ylen, xlen, chan, chan, chan, chan);
-                }
+      if (color != Color::NONE) {
+        auto chan = MakeChannels(p, color);
+        p->stain(row, cur_col, ylen, xlen, chan, chan, chan, chan);
+      }
 
-                if (style.style != static_cast<uint16_t>(Style::NORMAL)) {
-                  p->format(
-                      row, cur_col, ylen, xlen,
-                      static_cast<std::underlying_type_t<Style>>(style.style));
-                }
+      if (style.style != static_cast<uint16_t>(Style::NORMAL))
+        p->format(row, cur_col, ylen, xlen, static_cast<uint16_t>(style.style));
 
-                cur_col += xlen;
-              },
-              str);
-        });
+      cur_col += xlen;
+    }
 
     for (; cur_col < padding_to_col; ++cur_col)
       p->putc(row, cur_col, ' ');
@@ -145,8 +148,7 @@ public:
   String(S1 &&s, Color const color = Color::NONE,
          Core::IsOneOf<Style> auto... stys)
       : String(S2(std::forward<S1>(s)), color, stys...) {
-    size_ =
-        std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
+    size_ = str.at(0).str_var.visit([](auto const &s) { return s.size(); });
   };
 
   // Stream operator fallback for everything else
@@ -158,8 +160,7 @@ public:
          Core::IsOneOf<Style> auto... stys)
       : String((std::stringstream() << std::forward<S>(s)).str(), color,
                stys...) {
-    size_ =
-        std::get<0>(str.at(0)).visit([](auto const &s) { return s.size(); });
+    size_ = str.at(0).str_var.visit([](auto const &s) { return s.size(); });
   };
 
   String() = default;
@@ -185,6 +186,27 @@ public:
   String &operator+=(S &&other) noexcept {
     size_ += other.size();
     return this->append(std::forward<S>(other));
+  }
+
+  [[nodiscard]] bool operator==(String const &s) const noexcept {
+    // Size is the most likely to fail so allow that to bail first
+    return (size_ == s.size_) &&
+           std::ranges::equal(str, s.str, [](auto const &v1, auto const &v2) {
+             auto [svar_1, color_1, style_1] = v1;
+             auto [svar_2, color_2, style_2] = v2;
+             return (color_1 == color_2) && (style_1.style == style_2.style) &&
+                    (svar_1 == svar_2);
+           });
+  }
+
+  [[nodiscard]] bool operator!=(String const &s) const noexcept {
+    return (size_ != s.size_) ||
+           !std::ranges::equal(str, s.str, [](auto const &v1, auto const &v2) {
+             auto [svar_1, color_1, style_1] = v1;
+             auto [svar_2, color_2, style_2] = v2;
+             return (color_1 == color_2) && (style_1.style == style_2.style) &&
+                    (svar_1 == svar_2);
+           });
   }
 };
 

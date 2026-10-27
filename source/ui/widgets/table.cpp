@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <expected>
@@ -12,9 +13,11 @@
 #include <vector>
 
 #include "app_context.hpp"
+#include "draw.hpp"
 #include "tools/locked.hpp"
 
 #include "types.hpp"
+#include "ui.hpp"
 #include "ui/string.hpp"
 #include "ui/widget.hpp"
 
@@ -60,7 +63,7 @@ void Table::update_baseplane(ncpp::Plane *const p) noexcept {
 }
 
 void Table::rebuild_columns() noexcept {
-  App::AppContext::Log().debug("Rebuilding table columns");
+  App::AppContext::Log().debug("Rebuilding table columns for {}", name);
 
   _col_planes.clear();
   _col_planes.reserve(_table.size());
@@ -71,15 +74,61 @@ void Table::rebuild_columns() noexcept {
   size_t const col_sep = column_sep.load();
 
   for (auto &col : _table) {
+    App::AppContext::Log().trace(
+        "[plane {}] add column plane at (row {}, col {}) w/ dim ({} rows, {} "
+        "cols) putting x_off at {}",
+        name, y_off, x_off, ylen, col.max_width,
+        x_off + col.max_width + col_sep);
+
     _col_planes.emplace_back(_plane, ylen, col.max_width, y_off, x_off);
     x_off += col.max_width + col_sep;
+
+    // If not marked as damaged, a rarely-updating column is not
+    // redrawn after it was cleared and just disappears
+    col.damaged = true;
   }
 
   _col_planes.shrink_to_fit();
+
+  _needs_rebuild = false;
 }
 
 /* Table public methods */
-void Table::move_cursor(UI::CursorDirection const) noexcept {}
+void Table::move_cursor(UI::CursorDirection const d) noexcept {
+  if (!draw_cursor.test()) {
+    App::AppContext::Log().warn(
+        "Tried to move cursor on plane with cursor drawing disabled");
+    return;
+  }
+
+  auto skip_rows = cursor_skip_rows.get_const();
+
+  auto cursor = _cursor_pos.load();
+  auto cursor_target = cursor;
+  auto table_len = dim.get_const()->rows;
+
+  do {
+    if (d == UI::CursorDirection::NEXT) {
+      cursor_target = ((cursor_target + 1) < table_len) ? cursor_target + 1 : 0;
+    } else {
+      cursor_target = (cursor_target > 0) ? cursor_target - 1 : table_len - 1;
+    }
+  } while (skip_rows->contains(cursor_target));
+
+  while (!_cursor_pos.compare_exchange_strong(cursor, cursor_target)) {
+    cursor_target = cursor;
+    do {
+      if (d == UI::CursorDirection::NEXT) {
+        cursor_target =
+            ((cursor_target + 1) < table_len) ? cursor_target + 1 : 0;
+      } else {
+        cursor_target = (cursor_target > 0) ? cursor_target - 1 : table_len - 1;
+      }
+    } while (skip_rows->contains(cursor_target));
+  }
+
+  App::AppContext::Log().trace("Cursor position is now: {}", cursor_target);
+}
 
 void Table::set_dim(Table::Dim const &d) noexcept {
   // Do nothing if same dimensions
@@ -227,6 +276,12 @@ Table::set_backing_keys(std::vector<std::string> &&keys,
   return {};
 }
 
+void Table::damage_all() noexcept {
+  std::unique_lock lock(_mtx);
+  for (auto &c : _table)
+    c.damaged = true;
+}
+
 std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
   std::unique_lock lock(_mtx);
 
@@ -241,32 +296,90 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
   if (_needs_rebuild)
     rebuild_columns();
 
-  for (size_t col_idx = 0; col_idx < _table.size(); ++col_idx) {
-    auto &col = _table.at(col_idx);
-    auto &plane = _col_planes.at(col_idx);
+  // Single-row draw procedure
+  auto draw_row = [](Column const &col, ncpp::Plane &plane,
+                     std::optional<UI::String> const &row,
+                     size_t const row_offset, UI::String const &empty_cell) {
+    auto row_s = row.value_or(empty_cell);
+
+    size_t x;
+
+    switch (col.props.align) {
+    case Align::LEFT:
+      x = 0;
+      break;
+    case Align::CENTER:
+      x = (col.max_width - row_s.size()) / 2;
+      break;
+    case Align::RIGHT:
+      x = (col.max_width - row_s.size());
+      break;
+    }
+
+    row_s.apply_to_plane(&plane, row_offset, x, col.max_width);
+  };
+
+  // Pair column planes, then filter out any columns which are not damaged
+  auto v = std::views::zip(_table, _col_planes) |
+           std::views::filter(
+               [](auto const &p) -> bool { return std::get<0>(p).damaged; });
+
+  for (auto [col, plane] : v) {
+    plane.erase();
 
     size_t row_offset = 0;
 
     for (auto const &row : col.rows) {
-      auto row_s = row.value_or(empty_cell);
-
-      size_t x;
-
-      switch (col.props.align) {
-      case Align::LEFT:
-        x = 0;
-        break;
-      case Align::CENTER:
-        x = (col.max_width - row_s.size()) / 2;
-        break;
-      case Align::RIGHT:
-        x = (col.max_width - row_s.size());
-        break;
-      }
-
-      row_s.apply_to_plane(&plane, row_offset, x);
+      draw_row(col, plane, row, row_offset, empty_cell);
 
       row_offset++;
+    }
+
+    col.damaged = false;
+  }
+
+  if (draw_cursor.test()) {
+    size_t cursor_index = _cursor_pos.load();
+    size_t cursor_ypos = cursor_index;
+
+    // Calculate the drawn position of the cursor if drawing border
+    if (draw_border.test()) {
+      auto sep_rows = separator_rows.get_const();
+
+      size_t cursor = cursor_ypos;
+      size_t plane_cursor = 0;
+      size_t cursor_index = 0;
+
+      while (cursor_index < cursor) {
+        // row_before should lag behind the plane cursor
+
+        while (sep_rows->contains(plane_cursor))
+          plane_cursor++;
+
+        cursor_index++;
+      }
+
+      cursor_ypos = plane_cursor;
+    }
+
+    std::pair<size_t, size_t> to_redraw_row{cursor_index, cursor_ypos};
+
+    _last_drawn_cursor.swap(to_redraw_row);
+
+    auto [last_index, last_ypos] = to_redraw_row;
+
+    bool to_redraw = last_index < dim.get_const()->rows;
+
+    for (auto [col, plane] : std::ranges::zip_view{_table, _col_planes}) {
+      // Re-draw prior row
+      if (to_redraw)
+        draw_row(col, plane, col.rows.at(last_index), last_ypos, empty_cell);
+
+      auto color = Tools::Draw::mask_pal_channels(
+          &plane, Tools::Draw::Target::BG, UI::Color::BLUE_SOFT);
+
+      plane.stain(cursor_ypos, 0, 1, plane.get_dim_x(), color, color, color,
+                  color);
     }
   }
 
@@ -330,7 +443,13 @@ std::expected<void, WidgetErr> Table::set_at(size_t const row, size_t const col,
   _needs_rebuild =
       _table.at(col).recalculate_width(str.size()) || _needs_rebuild;
 
-  _table.at(col).rows.at(row) = std::move(str);
+  auto &target_col = _table.at(col);
+  auto &target_row = target_col.rows.at(row);
+
+  target_col.damaged = target_col.damaged || !target_row.has_value() ||
+                       (target_row.value() != str);
+
+  target_row = std::move(str);
 
   return {};
 }
@@ -360,11 +479,14 @@ Table::update_row(size_t const row,
   size_t col_idx = 0;
   for (std::optional<UI::String> s : std::move(new_row)) {
     auto &target_col = _table.at(col_idx);
+    auto &target_row = target_col.rows.at(row);
 
     _needs_rebuild =
         target_col.recalculate_width(s.value_or(empty_cell)) || _needs_rebuild;
 
-    target_col.rows.at(row) = std::move(s);
+    target_col.damaged = target_col.damaged || (target_row != s);
+
+    target_row = std::move(s);
 
     col_idx++;
   }
@@ -397,11 +519,14 @@ Table::update_row(size_t const row, size_t const col_offset,
   size_t col_idx = col_offset;
   for (std::optional<UI::String> s : std::move(new_row)) {
     auto &target_col = _table.at(col_idx);
+    auto &target_row = target_col.rows.at(row);
 
     _needs_rebuild =
         target_col.recalculate_width(s.value_or(empty_cell)) || _needs_rebuild;
 
-    target_col.rows.at(row) = std::move(s);
+    target_col.damaged = target_col.damaged || (target_row != s);
+
+    target_row = std::move(s);
 
     col_idx++;
   }
@@ -434,10 +559,22 @@ Table::update_col(size_t const col,
 
   std::unique_lock lock(_mtx);
 
-  _table.at(col).rows = std::move(new_col);
+  auto &target_col = _table.at(col);
 
-  _needs_rebuild =
-      _table.at(col).recalculate_width(empty_cell) || _needs_rebuild;
+  // target_col.damaged =
+  //     target_col.damaged ||
+  //     !std::ranges::equal(
+  //         new_col,
+  //         std::ranges::take_view(target_col.rows, target_col.rows.size()));
+  auto new_it = new_col.cbegin();
+  auto old_it = target_col.rows.cbegin();
+
+  while (!target_col.damaged)
+    target_col.damaged = *(new_it++) == *(old_it++);
+
+  target_col.rows = std::move(new_col);
+
+  _needs_rebuild = target_col.recalculate_width(empty_cell) || _needs_rebuild;
 
   return {};
 }
@@ -467,6 +604,19 @@ Table::update_col(size_t const col, size_t const row_offset,
 
   std::unique_lock lock(_mtx);
 
+  auto &target_col = _table.at(col);
+
+  // target_col.damaged =
+  //     target_col.damaged ||
+  //     std::ranges::equal(target_col.rows | std::views::take(new_col.size()) |
+  //                            std::views::drop(row_offset),
+  //                        new_col);
+  auto new_it = new_col.cbegin();
+  auto old_it = target_col.rows.cbegin();
+
+  while (!target_col.damaged)
+    target_col.damaged = *(new_it++) == *(old_it++);
+
   std::move(std::begin(new_col), std::end(new_col),
             std::begin(_table.at(col).rows) + static_cast<long>(row_offset));
 
@@ -484,7 +634,11 @@ std::expected<void, WidgetErr> Table::clear_at(size_t const row,
     return WidgetErr(WidgetErr::OUT_OF_RANGE);
 
   std::unique_lock lock(_mtx);
-  _table.at(col).rows.at(col) = std::nullopt;
+  auto &target_col = _table.at(col);
+  auto &target_row = target_col.rows.at(row);
+
+  target_col.damaged = target_col.damaged || target_row.has_value();
+  target_row = std::nullopt;
 
   return {};
 }

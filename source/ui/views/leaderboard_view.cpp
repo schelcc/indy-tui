@@ -29,13 +29,21 @@ LeaderboardView::LeaderboardView() : table_info() {
 
   // We'll need the backing keys for the leaderboard
   table_info.get_mut()->table.no_backing_keys.clear();
+  table_info.get_mut()->table.draw_cursor.test_and_set();
+  table_info.get_mut()->table.column_sep = 0;
 
   using namespace Input;
   handler
       .register_callback(KeyWithMod('k', Modifier::NONE), "Move cursor up",
-                         [this] { table_cursor--; })
+                         [this] {
+                           table_info.get_mut()->table.move_cursor(
+                               UI::CursorDirection::PREV);
+                         })
       .register_callback(KeyWithMod('j', Modifier::NONE), "Move cursor down",
-                         [this] { table_cursor++; })
+                         [this] {
+                           table_info.get_mut()->table.move_cursor(
+                               UI::CursorDirection::NEXT);
+                         })
       .register_callback(
           KeyWithMod(NCKEY_SPACE, Modifier::NONE),
           "Toggle highlighting on the current row", [this] {
@@ -79,7 +87,7 @@ apply_column(LeaderboardView::ColumnInfo const &c,
 std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
         &&drivers,
-    bool const focused, ncpp::Plane *const p) noexcept {
+    FocusState const focused, ncpp::Plane *const p) noexcept {
 
   if (drivers->size() == 0)
     return RenderErr(RenderErr::Source::VIEW, RenderErr::NOP,
@@ -117,6 +125,11 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
     dim = *t->table.dim.get_const();
   }
+
+  if (focused)
+    t->table.draw_cursor.test_and_set();
+  else
+    t->table.draw_cursor.clear();
 
   // Do nothing if we have no columns or no drivers
   if (!drivers->empty() && !t->cols.empty()) [[likely]] {
@@ -182,31 +195,33 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
       App::PerfContext::StopLeaderboardPopulationTime();
     }
   }
-  p->erase();
+  // p->erase();
   TRY_DROP(t->table.apply(p));
   return always_render(std::move(t), focused, p);
 }
 
 // Lighter render
 std::expected<void, UI::RenderErr>
-LeaderboardView::update_and_render(bool const focused,
+LeaderboardView::update_and_render(FocusState const focused,
                                    ncpp::Plane *const p) noexcept {
   auto t = table_info.get_mut();
 
-  auto rows = t->table.dim.get_const()->rows;
-  TRY_DROP(t->table.apply_row(p, (table_cursor.load() - 1) % rows));
-  TRY_DROP(t->table.apply_row(p, table_cursor.load() % rows));
-  TRY_DROP(t->table.apply_row(p, (table_cursor.load() + 1) % rows));
+  if (focused)
+    t->table.draw_cursor.test_and_set();
+  else
+    t->table.draw_cursor.clear();
+
+  TRY_DROP(t->table.apply(p));
 
   return always_render(std::move(t), focused, p);
 }
 
 // Steps to always render
-std::expected<void, UI::RenderErr>
-LeaderboardView::always_render(ThreadSafe::LockPair<TableInfo> &&t,
-                               bool const focused,
-                               ncpp::Plane *const p) noexcept {
-  auto dim = *t->table.dim.get_const();
+std::expected<void, UI::RenderErr> LeaderboardView::always_render(
+    [[maybe_unused]] ThreadSafe::LockPair<TableInfo> &&t,
+    FocusState const focused, ncpp::Plane *const p) noexcept {
+
+  // auto dim = *t->table.dim.get_const();
 
   // {
   //   auto h_rows = highlight_rows.get_const();
@@ -219,30 +234,26 @@ LeaderboardView::always_render(ThreadSafe::LockPair<TableInfo> &&t,
   //   }
   // }
 
-  {
-    auto res = t->table.batch_key_lookup(t->user_flagged_drivers);
-    if (!res.has_value()) {
-      return UI::RenderErr(UI::RenderErr::Source::VIEW,
-                           UI::RenderErr::TABLE_ERR,
-                           "Failed to batch-lookup user-flagged drivers");
-    }
+  // {
+  //   auto res = t->table.batch_key_lookup(t->user_flagged_drivers);
+  //   if (!res.has_value()) {
+  //     return UI::RenderErr(UI::RenderErr::Source::VIEW,
+  //                          UI::RenderErr::TABLE_ERR,
+  //                          "Failed to batch-lookup user-flagged drivers");
+  //   }
 
-    auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
-                                                UI::Color::BLUE_SOFT);
-    for (size_t idx : std::move(res.value()))
-      p->stain(idx + 1, 1, 1, p->get_dim_x() - 1, color, color, color, color);
-  }
+  //   auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
+  //                                               UI::Color::BLUE_SOFT);
+  //   for (size_t idx : std::move(res.value()))
+  //     p->stain(idx + 1, 1, 1, p->get_dim_x() - 1, color, color, color,
+  //     color);
+  // }
 
-  // Draw cursor, if focused
-  if (focused) {
-    auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
-                                                UI::Color::BLUE_SOFT);
-    p->stain((table_cursor.load() % dim.rows) + 1, 1, 1, p->get_dim_x() - 1,
-             color, color, color, color);
-  }
+  if (_prev_focus != focused)
+    Tools::Draw::border_with_title(
+        p, "Leaderboard", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
 
-  Tools::Draw::border_with_title(
-      p, "Leaderboard", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+  _prev_focus = focused;
 
   return {};
 }
