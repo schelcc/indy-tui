@@ -55,7 +55,7 @@ void Table::rebuild_columns() noexcept {
 
   size_t x_off = 1 + padding_left;
   size_t const y_off = 1 + padding_top;
-  size_t const ylen = _plane->get_dim_y() - y_off;
+  size_t const ylen = _plane->get_dim_y() - y_off - 1;
   size_t const col_sep = column_sep.load();
 
   for (auto &col : _table) {
