@@ -19,8 +19,6 @@
 #include <ncpp/CellStyle.hh>
 #include <ncpp/Plane.hh>
 
-#include "tools/cow.hpp"
-
 #include "core/core.hpp"
 
 #include "ui/types.hpp"

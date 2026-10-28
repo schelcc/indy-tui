@@ -184,13 +184,8 @@ BlockList::render(UI::RenderLevel const render_level,
     } else {
       auto &render_cb = std::get<std::shared_ptr<UI::Views::View>>(it->element)
                             ->render_callback;
-      if (render_cb.has_value()) {
-        TRY_DROP(std::invoke(render_cb.value(), render_level, it->plane.get(),
-                             UI::FocusState::FOCUSED));
-      } else
-        return UI::RenderErr(
-            UI::RenderErr::Source::VIEW, UI::RenderErr::NOP,
-            "Tried rendering a view with no set render callback");
+      TRY_DROP(
+          render_cb(render_level, it->plane.get(), UI::FocusState::FOCUSED));
     }
   }
 
@@ -205,12 +200,7 @@ BlockList::render(UI::RenderLevel const render_level,
     } else {
       auto &render_cb = std::get<std::shared_ptr<UI::Views::View>>(it->element)
                             ->render_callback;
-      if (render_cb.has_value()) {
-        TRY_DROP((*render_cb)(render_level, it->plane.get(), focus_state));
-      } else
-        return UI::RenderErr(
-            UI::RenderErr::Source::VIEW, UI::RenderErr::NOP,
-            "Tried rendering a view with no set render callback");
+      TRY_DROP(render_cb(render_level, it->plane.get(), focus_state));
     }
   }
 

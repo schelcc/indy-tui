@@ -83,9 +83,8 @@ struct LeaderboardView {
                    std::invoke_result_t<F, Telemetry::DriverTelemetry const &>,
                    UI::String, std::string, std::wstring>)
     ColumnInfo(F &&f, UI::String &&s, UI::Align a = UI::Align::LEFT)
-        : func([f = std::forward<F>(f)](Telemetry::DriverTelemetry const &d) {
-            return std::invoke(f, d);
-          }),
+        : func([f = std::forward<F>(f)](Telemetry::DriverTelemetry const &d)
+                   -> UI::String { return std::invoke(f, d); }),
           name(s), align(a) {}
 
     // TODO - After profile move this to multistr to support returning regular
@@ -159,7 +158,13 @@ struct View : public view_variant {
   using RenderCB = std::function<std::expected<void, RenderErr>(
       UI::RenderLevel, ncpp::Plane *const, FocusState const)>;
 
-  std::optional<RenderCB> render_callback = std::nullopt;
+  RenderCB render_callback =
+      std::function([](UI::RenderLevel, ncpp::Plane *const,
+                       FocusState const) -> std::expected<void, UI::RenderErr> {
+        return UI::RenderErr(
+            UI::RenderErr::Source::VIEW, UI::RenderErr::NOP,
+            "Tried rendering a view with no set render callback");
+      });
 
   template <typename F>
     requires(std::is_invocable_r_v<std::expected<void, RenderErr>, F,
