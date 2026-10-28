@@ -1,9 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <memory>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -15,6 +17,8 @@
 
 #include <ncpp/CellStyle.hh>
 #include <ncpp/Plane.hh>
+
+#include "tools/cow.hpp"
 
 #include "core/core.hpp"
 
@@ -56,11 +60,23 @@ private:
     StyleSet style_set;
   };
 
+  static_assert(std::is_nothrow_move_constructible_v<Triple> &&
+                std::is_nothrow_move_assignable_v<Triple>);
+
+  // mutable std::variant<std::vector<Triple>,
+  //                      std::shared_ptr<std::vector<Triple>>>
+  //     str{};
+
+  Tools::CopyOnWrite<std::vector<Triple>> str{};
+
+  static_assert(std::is_nothrow_move_constructible_v<decltype(str)> &&
+                std::is_nothrow_move_assignable_v<decltype(str)>);
+
 public:
   // std::vector<
   //     std::tuple<std::variant<std::string, std::wstring>, Color, StyleSet>>
   //     str{};
-  std::vector<Triple> str{};
+  // std::vector<Triple> str{};
 
   [[nodiscard]] size_t size() const noexcept { return size_; }
 
@@ -68,14 +84,22 @@ public:
     requires requires(S s) { String(s); }
   String &append(S &&s) {
     if constexpr (std::is_same_v<std::remove_reference_t<S>, String>) {
-      if constexpr (std::is_rvalue_reference_v<S>)
-        str.insert(std::end(str), std::make_move_iterator(std::begin(s.str)),
-                   std::make_move_iterator(std::end(s.str)));
-      else
-        str.insert(std::end(str), std::begin(s.str), std::end(s.str));
+      if constexpr (std::is_rvalue_reference_v<S>) {
+        str.get_mut().append_range(std::move(s.str.get_mut()));
+        // str.get_mut().insert(
+        //     std::end(str.get_const()),
+        //     std::make_move_iterator(std::begin(s.str.get_mut())),
+        //     std::make_move_iterator(std::end(s.str.get_mut())));
+      } else {
+        str.get_mut().append_range(s.str.get_const());
+        // str.get_mut().insert(std::end(str.get_mut()),
+        //                      std::begin(s.str.get_const()),
+        //                      std::end(s.str.get_const()));
+      }
       size_ += s.size_;
     } else {
-      str.emplace_back(std::forward<S>(s), Color::NONE, Style::NORMAL);
+      str.get_mut().emplace_back(std::forward<S>(s), Color::NONE,
+                                 Style::NORMAL);
       size_ += s.size();
     }
     return *this;
@@ -86,7 +110,7 @@ public:
                       size_t const padding_to_col = 0) const {
     size_t cur_col = col;
 
-    for (auto const &[str_var, color, style] : str) {
+    for (auto &[str_var, color, style] : str.get_const()) {
       size_t ylen = 1;
       size_t xlen;
 
@@ -118,16 +142,22 @@ public:
   template <Core::IsOneOf<std::string, std::wstring> S>
   String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
       : size_(s.size()),
-        str({{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
-                                                      std::forward<S>(s)),
-              color, StyleSet(stys...)}}) {}
+        str(std::vector<Triple>{
+            {std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
+                                                     std::forward<S>(s)),
+             color, StyleSet(stys...)}}) {};
+  // str(std::in_place_type_t<std::vector<Triple>>(),
+  //     {{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
+  //                                               std::forward<S>(s)),
+  //       color, StyleSet(stys...)}}) {}
 
   template <Core::IsOneOf<std::string, std::wstring> S>
   String(S &&s, Color const color = UI::Color::NONE)
       : size_(s.size()),
-        str({{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
-                                                      std::forward<S>(s)),
-              color, StyleSet()}}) {}
+        str(std::vector<Triple>{
+            {std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
+                                                     std::forward<S>(s)),
+             color, StyleSet{}}}) {};
 
   // Conditionally pick corresponding string type for a given string view
   template <typename SV, typename S = std::conditional_t<
@@ -148,7 +178,15 @@ public:
   String(S1 &&s, Color const color = Color::NONE,
          Core::IsOneOf<Style> auto... stys)
       : String(S2(std::forward<S1>(s)), color, stys...) {
-    size_ = str.at(0).str_var.visit([](auto const &s) { return s.size(); });
+    size_ = str.get_const().at(0).str_var.visit(
+        [](auto const &s) { return s.size(); });
+    // if (is_sharing())
+    //   size_ = std::get<std::vector<Triple>>(str).at(0).str_var.visit(
+    //       [](auto const &s) { return s.size(); });
+    // else
+    //   size_ = std::get<std::shared_ptr<std::vector<Triple>>>(str)
+    //               ->at(0)
+    //               .str_var.visit([](auto const &s) { return s.size(); });
   };
 
   // Stream operator fallback for everything else
@@ -160,20 +198,28 @@ public:
          Core::IsOneOf<Style> auto... stys)
       : String((std::stringstream() << std::forward<S>(s)).str(), color,
                stys...) {
-    size_ = str.at(0).str_var.visit([](auto const &s) { return s.size(); });
+    size_ = str.get_const().at(0).str_var.visit(
+        [](auto const &s) { return s.size(); });
   };
 
   String() = default;
 
+  String(String const &other) = default;
+
   String &operator+=(String const &other) noexcept {
-    str.insert(std::end(str), std::begin(other.str), std::end(other.str));
+    str.get_mut().insert(std::end(str.get_mut()),
+                         std::begin(other.str.get_const()),
+                         std::end(other.str.get_const()));
     size_ += other.size_;
     return *this;
   }
 
   String &operator+=(String &&other) noexcept {
-    str.insert(std::end(str), std::make_move_iterator(std::begin(other.str)),
-               std::make_move_iterator(std::end(other.str)));
+    str.get_mut().insert(
+        std::end(str.get_mut()),
+        std::make_move_iterator(std::begin(other.str.get_mut())),
+        std::make_move_iterator(std::end(other.str.get_mut())));
+
     size_ += other.size_;
     return *this;
   }
@@ -191,22 +237,27 @@ public:
   [[nodiscard]] bool operator==(String const &s) const noexcept {
     // Size is the most likely to fail so allow that to bail first
     return (size_ == s.size_) &&
-           std::ranges::equal(str, s.str, [](auto const &v1, auto const &v2) {
-             auto [svar_1, color_1, style_1] = v1;
-             auto [svar_2, color_2, style_2] = v2;
-             return (color_1 == color_2) && (style_1.style == style_2.style) &&
-                    (svar_1 == svar_2);
-           });
+           std::ranges::equal(str.get_const(), s.str.get_const(),
+                              [](auto const &v1, auto const &v2) {
+                                auto [svar_1, color_1, style_1] = v1;
+                                auto [svar_2, color_2, style_2] = v2;
+                                return (color_1 == color_2) &&
+                                       (style_1.style == style_2.style) &&
+                                       (svar_1 == svar_2);
+                              });
   }
 
   [[nodiscard]] bool operator!=(String const &s) const noexcept {
-    return (size_ != s.size_) ||
-           !std::ranges::equal(str, s.str, [](auto const &v1, auto const &v2) {
-             auto [svar_1, color_1, style_1] = v1;
-             auto [svar_2, color_2, style_2] = v2;
-             return (color_1 == color_2) && (style_1.style == style_2.style) &&
-                    (svar_1 == svar_2);
-           });
+    // Size is the most likely to fail so allow that to bail first
+    return (size_ != s.size_) &&
+           !std::ranges::equal(str.get_const(), s.str.get_const(),
+                               [](auto const &v1, auto const &v2) {
+                                 auto [svar_1, color_1, style_1] = v1;
+                                 auto [svar_2, color_2, style_2] = v2;
+                                 return (color_1 == color_2) &&
+                                        (style_1.style == style_2.style) &&
+                                        (svar_1 == svar_2);
+                               });
   }
 };
 
