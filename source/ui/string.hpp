@@ -43,8 +43,6 @@ namespace UI {
 
 struct String {
 private:
-  size_t size_ = 0;
-
   struct StyleSet {
     uint16_t style = 0;
 
@@ -65,134 +63,92 @@ private:
     StyleSet() : style(static_cast<uint16_t>(UI::Style::NORMAL)) {};
   };
 
-  struct Triple {
-    std::wstring wstr;
-    Color color;
+  struct FmtPair {
     StyleSet style_set;
+    UI::Color color;
+    size_t start;
+    size_t length;
+
+    bool operator==(FmtPair const &o) const noexcept {
+      return (start == o.start) && (length == o.length) &&
+             (style_set.style == o.style_set.style) && (color == o.color);
+    }
   };
 
-  static_assert(std::is_nothrow_move_constructible_v<Triple> &&
-                std::is_nothrow_move_assignable_v<Triple>);
-
-  // mutable std::variant<std::vector<Triple>,
-  //                      std::shared_ptr<std::vector<Triple>>>
-  //     str{};
-
-  Tools::CopyOnWrite<std::vector<Triple>> str{};
-
-  static_assert(std::is_nothrow_move_constructible_v<decltype(str)> &&
-                std::is_nothrow_move_assignable_v<decltype(str)>);
+  std::wstring str;
+  std::vector<FmtPair> fmts{};
 
 public:
-  // std::vector<
-  //     std::tuple<std::variant<std::string, std::wstring>, Color, StyleSet>>
-  //     str{};
-  // std::vector<Triple> str{};
-
-  [[nodiscard]] size_t size() const noexcept { return size_; }
+  [[nodiscard]] size_t size() const noexcept { return str.size(); }
 
   template <typename S>
     requires requires(S s) { String(s); }
   String &append(S &&s) {
     if constexpr (std::is_same_v<std::remove_reference_t<S>, String>) {
-      if constexpr (std::is_rvalue_reference_v<S>) {
-        str.get_mut().append_range(std::move(s.str.get_mut()));
-        // str.get_mut().insert(
-        //     std::end(str.get_const()),
-        //     std::make_move_iterator(std::begin(s.str.get_mut())),
-        //     std::make_move_iterator(std::end(s.str.get_mut())));
-      } else {
-        str.get_mut().append_range(s.str.get_const());
-        // str.get_mut().insert(std::end(str.get_mut()),
-        //                      std::begin(s.str.get_const()),
-        //                      std::end(s.str.get_const()));
-      }
-      size_ += s.size_;
+      auto pre_size = str.size();
+      str.append(std::forward_like<S>(s.str));
+      std::ranges::transform(
+          std::forward_like<S>(s.fmts), std::back_inserter(fmts),
+          [pre_size](auto &&v) -> FmtPair {
+            auto &&[style, color, start, len] = std::forward<decltype(v)>(v);
+            return {style, color, start + pre_size, len};
+          });
     } else {
-      str.get_mut().emplace_back(std::forward<S>(s), Color::NONE,
-                                 Style::NORMAL);
-      size_ += s.size();
+      str.append(std::forward<S>(s));
     }
     return *this;
   }
 
   // Templating column index to permit both lvalue and rvalue references
   void apply_to_plane(ncpp::Plane *const p, size_t const row, size_t const col,
-                      size_t const padding_to_col = 0) const {
-    size_t cur_col = col;
+                      size_t const padding_to_col = 0) const noexcept {
 
-    for (auto &[s, color, style] : str.get_const()) {
-      size_t ylen = 1;
-      size_t xlen = s.length();
-      p->putstr(row, cur_col, s.c_str());
+    p->putstr(row, col, str.c_str());
 
-      // if (std::holds_alternative<std::string>(str_var)) {
-      //   auto &s = std::get<std::string>(str_var);
-      //   xlen = s.length();
-      //   p->putstr(row, cur_col, s.c_str());
-      // } else {
-      //   auto &s = std::get<std::wstring>(str_var);
-      //   xlen = s.length();
-      //   p->putstr(row, cur_col, s.c_str());
-      // }
-
+    for (auto const &[style, color, start, length] : fmts) {
       if (color != Color::NONE) {
         auto chan = MakeChannels(p, color);
-        p->stain(row, cur_col, ylen, xlen, chan, chan, chan, chan);
+        p->stain(row, start, 1, length, chan, chan, chan, chan);
       }
 
       if (style.style != static_cast<uint16_t>(Style::NORMAL))
-        p->format(row, cur_col, ylen, xlen, static_cast<uint16_t>(style.style));
-
-      cur_col += xlen;
+        p->format(row, start, 1, length, static_cast<uint16_t>(style.style));
     }
 
-    for (; cur_col < padding_to_col; ++cur_col)
-      p->putc(row, cur_col, ' ');
+    if ((col + str.size()) < padding_to_col)
+      p->putstr(
+          row, col + str.size(),
+          std::wstring(padding_to_col - (col + str.size()), L' ').c_str());
   }
 
   String(std::string const &s, Color const color,
          Core::IsOneOf<UI::Style> auto... stys)
-      : size_(s.size()),
-        str(std::vector<Triple>{{str_to_wstr(s), color, StyleSet(stys...)}}) {}
+      : str(str_to_wstr(s)) {
+    fmts.emplace_back(StyleSet(stys...), color, 0, str.size());
+  }
 
-  String(std::string const &s, Color const color = UI::Color::NONE)
-      : size_(s.size()),
-        str(std::vector<Triple>{{str_to_wstr(s), color, StyleSet{}}}) {}
+  String(std::string const &s, Color const color) : str(str_to_wstr(s)) {
+    fmts.emplace_back(StyleSet(), color, 0, str.size());
+  }
+
+  String(std::string const &s) : str(str_to_wstr(s)), fmts() {}
 
   template <typename S>
     requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
   String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
-      : size_(s.size()), str(std::vector<Triple>{
-                             {std::forward<S>(s), color, StyleSet(stys...)}}) {}
+      : str(std::forward<S>(s)) {
+    fmts.emplace_back(StyleSet(stys...), color, 0, str.size());
+  }
 
   template <typename S>
     requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
-  String(S &&s, Color const color = UI::Color::NONE)
-      : size_(s.size()),
-        str(std::vector<Triple>{{std::forward<S>(s), color, StyleSet{}}}) {}
+  String(S &&s, Color const color) : str(std::forward<S>(s)) {
+    fmts.emplace_back(StyleSet(), color, 0, str.size());
+  }
 
-  // template <Core::IsOneOf<std::string, std::wstring> S>
-  // String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
-  //     : size_(s.size()),
-  //       str(std::vector<Triple>{
-  //           {std::variant<std::string,
-  //           std::wstring>(std::in_place_type_t<S>(),
-  //                                                    std::forward<S>(s)),
-  //            color, StyleSet(stys...)}}) {};
-  // str(std::in_place_type_t<std::vector<Triple>>(),
-  //     {{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
-  //                                               std::forward<S>(s)),
-  //       color, StyleSet(stys...)}}) {}
-
-  // template <Core::IsOneOf<std::string, std::wstring> S>
-  // String(S &&s, Color const color = UI::Color::NONE)
-  //     : size_(s.size()),
-  //       str(std::vector<Triple>{
-  //           {std::variant<std::string,
-  //           std::wstring>(std::in_place_type_t<S>(),
-  //                                                    std::forward<S>(s)),
-  //            color, StyleSet{}}}) {};
+  template <typename S>
+    requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
+  String(S &&s) : str(std::forward<S>(s)), fmts() {}
 
   // Conditionally pick corresponding string type for a given string view
   template <typename SV, typename S = std::conditional_t<
@@ -212,16 +168,7 @@ public:
              !Core::IsOneOf<S1, std::string, std::wstring>)
   String(S1 &&s, Color const color = Color::NONE,
          Core::IsOneOf<Style> auto... stys)
-      : String(S2(std::forward<S1>(s)), color, stys...) {
-    size_ = str.get_const().at(0).wstr.size();
-    // if (is_sharing())
-    //   size_ = std::get<std::vector<Triple>>(str).at(0).str_var.visit(
-    //       [](auto const &s) { return s.size(); });
-    // else
-    //   size_ = std::get<std::shared_ptr<std::vector<Triple>>>(str)
-    //               ->at(0)
-    //               .str_var.visit([](auto const &s) { return s.size(); });
-  };
+      : String(S2(std::forward<S1>(s)), color, stys...){};
 
   // Stream operator fallback for everything else
   template <typename S>
@@ -231,31 +178,24 @@ public:
   String(S &&s, Color const color = Color::NONE,
          Core::IsOneOf<Style> auto... stys)
       : String((std::stringstream() << std::forward<S>(s)).str(), color,
-               stys...) {
-    size_ = str.get_const().at(0).wstr.size();
-    // size_ = str.get_const().at(0).str_var.visit(
-    //     [](auto const &s) { return s.size(); });
-  };
+               stys...){};
 
   String() = default;
 
   String(String const &other) = default;
 
-  String &operator+=(String const &other) noexcept {
-    str.get_mut().insert(std::end(str.get_mut()),
-                         std::begin(other.str.get_const()),
-                         std::end(other.str.get_const()));
-    size_ += other.size_;
-    return *this;
-  }
+  template <typename S>
+    requires(Core::IsOneOf<S, String>)
+  String &operator+=(S &&s) noexcept {
+    auto pre_size = size();
+    str.append(std::forward_like<S>(s.str));
+    std::ranges::transform(
+        std::forward_like<S>(s.fmts), std::back_inserter(fmts),
+        [pre_size](auto &&v) -> FmtPair {
+          auto &&[style, color, start, len] = std::forward<decltype(v)>(v);
+          return {style, color, start + pre_size, len};
+        });
 
-  String &operator+=(String &&other) noexcept {
-    str.get_mut().insert(
-        std::end(str.get_mut()),
-        std::make_move_iterator(std::begin(other.str.get_mut())),
-        std::make_move_iterator(std::end(other.str.get_mut())));
-
-    size_ += other.size_;
     return *this;
   }
 
@@ -265,37 +205,21 @@ public:
               { s.size() } -> std::same_as<size_t>;
             }
   String &operator+=(S &&other) noexcept {
-    size_ += other.size();
     return this->append(std::forward<S>(other));
   }
 
   [[nodiscard]] bool operator==(String const &s) const noexcept {
     // Size is the most likely to fail so allow that to bail first
-    return (size_ == s.size_) &&
-           std::ranges::equal(str.get_const(), s.str.get_const(),
-                              [](auto const &v1, auto const &v2) {
-                                auto [svar_1, color_1, style_1] = v1;
-                                auto [svar_2, color_2, style_2] = v2;
-                                return (color_1 == color_2) &&
-                                       (style_1.style == style_2.style) &&
-                                       (svar_1 == svar_2);
-                              });
+    return (str == s.str) && (fmts == s.fmts);
   }
 
   [[nodiscard]] bool operator!=(String const &s) const noexcept {
     // Size is the most likely to fail so allow that to bail first
-    return (size_ != s.size_) &&
-           !std::ranges::equal(str.get_const(), s.str.get_const(),
-                               [](auto const &v1, auto const &v2) {
-                                 auto [svar_1, color_1, style_1] = v1;
-                                 auto [svar_2, color_2, style_2] = v2;
-                                 return (color_1 == color_2) &&
-                                        (style_1.style == style_2.style) &&
-                                        (svar_1 == svar_2);
-                               });
+    return (str != s.str) || (fmts != s.fmts);
   }
 };
 
+// Handful of commonly used ctors, just to catch blatant problems fast
 static_assert(std::is_constructible_v<UI::String, std::string>);
 static_assert(std::is_constructible_v<UI::String, std::string, UI::Color>);
 static_assert(
