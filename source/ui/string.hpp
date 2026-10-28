@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cwchar>
 #include <iterator>
 #include <memory>
 #include <ranges>
@@ -27,6 +28,16 @@
 
 template <typename T, typename S>
 concept IsNot = !std::is_same_v<T, S>;
+
+[[nodiscard]] static inline std::wstring
+str_to_wstr(std::string const &str) noexcept {
+  std::wstring wstr(str.size(), L' ');
+
+  std::mbstate_t state = std::mbstate_t();
+  auto cstr = str.c_str();
+  wstr.resize(std::mbsrtowcs(&wstr[0], &cstr, str.size(), &state));
+  return wstr;
+}
 
 namespace UI {
 
@@ -55,7 +66,7 @@ private:
   };
 
   struct Triple {
-    std::variant<std::string, std::wstring> str_var;
+    std::wstring wstr;
     Color color;
     StyleSet style_set;
   };
@@ -110,19 +121,20 @@ public:
                       size_t const padding_to_col = 0) const {
     size_t cur_col = col;
 
-    for (auto &[str_var, color, style] : str.get_const()) {
+    for (auto &[s, color, style] : str.get_const()) {
       size_t ylen = 1;
-      size_t xlen;
+      size_t xlen = s.length();
+      p->putstr(row, cur_col, s.c_str());
 
-      if (std::holds_alternative<std::string>(str_var)) {
-        auto &s = std::get<std::string>(str_var);
-        xlen = s.length();
-        p->putstr(row, cur_col, s.c_str());
-      } else {
-        auto &s = std::get<std::wstring>(str_var);
-        xlen = s.length();
-        p->putstr(row, cur_col, s.c_str());
-      }
+      // if (std::holds_alternative<std::string>(str_var)) {
+      //   auto &s = std::get<std::string>(str_var);
+      //   xlen = s.length();
+      //   p->putstr(row, cur_col, s.c_str());
+      // } else {
+      //   auto &s = std::get<std::wstring>(str_var);
+      //   xlen = s.length();
+      //   p->putstr(row, cur_col, s.c_str());
+      // }
 
       if (color != Color::NONE) {
         auto chan = MakeChannels(p, color);
@@ -139,25 +151,48 @@ public:
       p->putc(row, cur_col, ' ');
   }
 
-  template <Core::IsOneOf<std::string, std::wstring> S>
-  String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
+  String(std::string const &s, Color const color,
+         Core::IsOneOf<UI::Style> auto... stys)
       : size_(s.size()),
-        str(std::vector<Triple>{
-            {std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
-                                                     std::forward<S>(s)),
-             color, StyleSet(stys...)}}) {};
+        str(std::vector<Triple>{{str_to_wstr(s), color, StyleSet(stys...)}}) {}
+
+  String(std::string const &s, Color const color = UI::Color::NONE)
+      : size_(s.size()),
+        str(std::vector<Triple>{{str_to_wstr(s), color, StyleSet{}}}) {}
+
+  template <typename S>
+    requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
+  String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
+      : size_(s.size()), str(std::vector<Triple>{
+                             {std::forward<S>(s), color, StyleSet(stys...)}}) {}
+
+  template <typename S>
+    requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
+  String(S &&s, Color const color = UI::Color::NONE)
+      : size_(s.size()),
+        str(std::vector<Triple>{{std::forward<S>(s), color, StyleSet{}}}) {}
+
+  // template <Core::IsOneOf<std::string, std::wstring> S>
+  // String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
+  //     : size_(s.size()),
+  //       str(std::vector<Triple>{
+  //           {std::variant<std::string,
+  //           std::wstring>(std::in_place_type_t<S>(),
+  //                                                    std::forward<S>(s)),
+  //            color, StyleSet(stys...)}}) {};
   // str(std::in_place_type_t<std::vector<Triple>>(),
   //     {{std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
   //                                               std::forward<S>(s)),
   //       color, StyleSet(stys...)}}) {}
 
-  template <Core::IsOneOf<std::string, std::wstring> S>
-  String(S &&s, Color const color = UI::Color::NONE)
-      : size_(s.size()),
-        str(std::vector<Triple>{
-            {std::variant<std::string, std::wstring>(std::in_place_type_t<S>(),
-                                                     std::forward<S>(s)),
-             color, StyleSet{}}}) {};
+  // template <Core::IsOneOf<std::string, std::wstring> S>
+  // String(S &&s, Color const color = UI::Color::NONE)
+  //     : size_(s.size()),
+  //       str(std::vector<Triple>{
+  //           {std::variant<std::string,
+  //           std::wstring>(std::in_place_type_t<S>(),
+  //                                                    std::forward<S>(s)),
+  //            color, StyleSet{}}}) {};
 
   // Conditionally pick corresponding string type for a given string view
   template <typename SV, typename S = std::conditional_t<
@@ -178,8 +213,7 @@ public:
   String(S1 &&s, Color const color = Color::NONE,
          Core::IsOneOf<Style> auto... stys)
       : String(S2(std::forward<S1>(s)), color, stys...) {
-    size_ = str.get_const().at(0).str_var.visit(
-        [](auto const &s) { return s.size(); });
+    size_ = str.get_const().at(0).wstr.size();
     // if (is_sharing())
     //   size_ = std::get<std::vector<Triple>>(str).at(0).str_var.visit(
     //       [](auto const &s) { return s.size(); });
@@ -198,8 +232,9 @@ public:
          Core::IsOneOf<Style> auto... stys)
       : String((std::stringstream() << std::forward<S>(s)).str(), color,
                stys...) {
-    size_ = str.get_const().at(0).str_var.visit(
-        [](auto const &s) { return s.size(); });
+    size_ = str.get_const().at(0).wstr.size();
+    // size_ = str.get_const().at(0).str_var.visit(
+    //     [](auto const &s) { return s.size(); });
   };
 
   String() = default;
@@ -260,6 +295,19 @@ public:
                                });
   }
 };
+
+static_assert(std::is_constructible_v<UI::String, std::string>);
+static_assert(std::is_constructible_v<UI::String, std::string, UI::Color>);
+static_assert(
+    std::is_constructible_v<UI::String, std::string, UI::Color, UI::Style>);
+static_assert(std::is_constructible_v<UI::String, std::string, UI::Color,
+                                      UI::Style, UI::Style>);
+static_assert(std::is_constructible_v<UI::String, std::wstring>);
+static_assert(std::is_constructible_v<UI::String, std::wstring, UI::Color>);
+static_assert(
+    std::is_constructible_v<UI::String, std::wstring, UI::Color, UI::Style>);
+static_assert(std::is_constructible_v<UI::String, std::wstring, UI::Color,
+                                      UI::Style, UI::Style>);
 
 template <typename S, typename S1>
   requires(std::is_same_v<S1, String> || std::is_same_v<S, String>)
