@@ -28,11 +28,16 @@ bool Table::Column::recalculate_width(UI::String const &default_str) {
 
   auto pre_width = max_width;
 
-  max_width = default_str.size();
+  /*
+  NOTE : I'm not sure why, but we have to add 1 to the retrieved size
+  for these recalculate calls. Maybe later problem
+  */
+
+  max_width = default_str.size() + 1;
 
   for (std::optional<UI::String> const &s : rows) {
     max_width =
-        s.has_value() ? std::max(max_width, s.value().size()) : max_width;
+        s.has_value() ? std::max(max_width, s.value().size() + 1) : max_width;
   }
 
   // Never let max_width be zero
@@ -44,7 +49,7 @@ bool Table::Column::recalculate_width(UI::String const &default_str) {
 bool Table::Column::recalculate_width(size_t const check_width) {
   auto pre_width = max_width;
 
-  max_width = std::max(check_width, max_width);
+  max_width = std::max(check_width + 1, max_width);
 
   return max_width != pre_width;
 }
@@ -74,11 +79,8 @@ void Table::rebuild_columns() noexcept {
   size_t const col_sep = column_sep.load();
 
   for (auto &col : _table) {
-    App::AppContext::Log().trace(
-        "[plane {}] add column plane at (row {}, col {}) w/ dim ({} rows, {} "
-        "cols) putting x_off at {}",
-        name, y_off, x_off, ylen, col.max_width,
-        x_off + col.max_width + col_sep);
+    // Necessary in case first rebuild beats an update call
+    col.recalculate_width(empty_cell.size());
 
     _col_planes.emplace_back(_plane, ylen, col.max_width, y_off, x_off);
     x_off += col.max_width + col_sep;
