@@ -33,11 +33,11 @@ bool Table::Column::recalculate_width(UI::String const &default_str) {
   for these recalculate calls. Maybe later problem
   */
 
-  max_width = default_str.size() + 1;
+  max_width = default_str.size();
 
   for (std::optional<UI::String> const &s : rows) {
     max_width =
-        s.has_value() ? std::max(max_width, s.value().size() + 1) : max_width;
+        s.has_value() ? std::max(max_width, s.value().size()) : max_width;
   }
 
   // Never let max_width be zero
@@ -49,7 +49,7 @@ bool Table::Column::recalculate_width(UI::String const &default_str) {
 bool Table::Column::recalculate_width(size_t const check_width) {
   auto pre_width = max_width;
 
-  max_width = std::max(check_width + 1, max_width);
+  max_width = std::max(check_width, max_width);
 
   return max_width != pre_width;
 }
@@ -73,17 +73,29 @@ void Table::rebuild_columns() noexcept {
   _col_planes.clear();
   _col_planes.reserve(_table.size());
 
-  size_t x_off = 1 + padding_left;
+  bool const drawing_border = draw_border.test();
+
+  // If drawing the border, should add 2 to column widths to account
+  // for drawn border symbols
+  size_t const cell_padding = drawing_border * 2;
+
+  // How much to always step x_off forward each iter. We want border
+  // edges to overlap, so for border additions we'll add just 1 or 0
+  // accordingly
+  size_t const width_adj = drawing_border + column_sep.load();
+
   size_t const y_off = 1 + padding_top;
   size_t const ylen = _plane->get_dim_y() - y_off - 1;
-  size_t const col_sep = column_sep.load();
+
+  size_t x_off = 1 + padding_left;
 
   for (auto &col : _table) {
     // Necessary in case first rebuild beats an update call
     col.recalculate_width(empty_cell.size());
 
-    _col_planes.emplace_back(_plane, ylen, col.max_width, y_off, x_off);
-    x_off += col.max_width + col_sep;
+    _col_planes.emplace_back(_plane, ylen, col.max_width + cell_padding, y_off,
+                             x_off);
+    x_off += col.max_width + width_adj;
 
     // If not marked as damaged, a rarely-updating column is not
     // redrawn after it was cleared and just disappears
@@ -297,18 +309,23 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
 
   if (_needs_rebuild)
     rebuild_columns();
+  }
+
+  App::AppContext::Log().debug("Draw table {}", name);
+
+  bool drawing_border = draw_border.test();
 
   // Single-row draw procedure
-  auto draw_row = [](Column const &col, ncpp::Plane &plane,
-                     std::optional<UI::String> const &row,
-                     size_t const row_offset, UI::String const &empty_cell) {
+  auto draw_row = [drawing_border](Column const &col, ncpp::Plane &plane,
+                                   std::optional<UI::String> const &row,
+                                   size_t const row_offset,
+                                   UI::String const &empty_cell) {
     auto row_s = row.value_or(empty_cell);
 
-    size_t x;
+    size_t x = 0;
 
     switch (col.props.align) {
     case Align::LEFT:
-      x = 0;
       break;
     case Align::CENTER:
       x = (col.max_width - row_s.size()) / 2;
@@ -318,7 +335,9 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
       break;
     }
 
-    row_s.apply_to_plane(&plane, row_offset, x, col.max_width);
+    x += drawing_border;
+
+    return row_s.apply_to_plane(&plane, row_offset, x, col.max_width);
   };
 
   // Pair column planes, then filter out any columns which are not damaged
@@ -329,10 +348,10 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
   for (auto [col, plane] : v) {
     plane.erase();
 
-    size_t row_offset = 0;
+    size_t row_offset = drawing_border;
 
     for (auto const &row : col.rows) {
-      draw_row(col, plane, row, row_offset, empty_cell);
+      TRY_DROP(draw_row(col, plane, row, row_offset, empty_cell));
 
       row_offset++;
     }
