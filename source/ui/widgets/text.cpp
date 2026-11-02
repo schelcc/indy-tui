@@ -22,7 +22,7 @@ void Text::clear() noexcept {
 void Text::apply(ncpp::Plane *const p) noexcept {
   std::shared_lock lock(_mtx);
 
-  text.apply_to_plane(p, 1, 1);
+  auto _ = text.apply_to_plane(p, 1, 1);
 }
 
 }; // namespace UI

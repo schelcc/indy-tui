@@ -53,6 +53,11 @@ struct FocusState {
 
 enum class Align { LEFT, CENTER, RIGHT };
 
+struct BorderCfg {
+  bool left;
+  bool right;
+};
+
 enum class RightBorder { ALLOW, DENY };
 
 enum class Target { FOREGROUND, BACKGROUND };

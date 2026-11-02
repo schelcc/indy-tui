@@ -27,10 +27,16 @@ LeaderboardView::LeaderboardView() : table_info() {
   // table.get_mut()->set_dim(Table::Dim(0, 0));
   // table.get_mut()->column_sep = 1;
 
-  // We'll need the backing keys for the leaderboard
-  table_info.get_mut()->table.no_backing_keys.clear();
-  table_info.get_mut()->table.draw_cursor.test_and_set();
-  table_info.get_mut()->table.column_sep = 0;
+  // Configure the table
+  {
+    auto t = table_info.get_mut();
+    t->table.no_backing_keys.clear();
+    t->table.draw_cursor.test_and_set();
+    t->table.draw_border.test_and_set();
+    t->table.column_sep = 0;
+    t->table.padding_top = 1;
+    t->table.padding_left = 1;
+  }
 
   using namespace Input;
   handler
@@ -110,8 +116,11 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
     // Configure the table columns' properties based on our columns
     size_t idx = 0;
-    for (auto &c : t->cols)
-      t->table.column_props(idx++)->align = c.align;
+    for (auto &c : t->cols) {
+      auto props = t->table.column_props(idx++);
+      props->align = c.align;
+      props->border_cfg = c.border_cfg;
+    }
 
     dim = *t->table.dim.get_const();
 

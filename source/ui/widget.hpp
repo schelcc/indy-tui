@@ -125,7 +125,7 @@ public:
 
     struct Props {
       Align align = Align::LEFT;
-      RightBorder right_border_rule = RightBorder::ALLOW;
+      BorderCfg border_cfg = {true, true};
     } props{};
 
     /** @brief Recalculate this column's max_width. Returns bool indicating
@@ -165,11 +165,24 @@ private:
   /// not thread safe.
   ncpp::Plane *_plane = nullptr;
 
+  /// @brief Mapping of table row index to y-coordinate. Indexing at a
+  /// table row position retrieves that row's drawn position.
+  std::vector<size_t> _table_row_ypos_map{};
+
+  /// @brief Track the position of the cursor at the time of the last
+  /// draw. Only set by redraw_cursor().
+  size_t _last_cursor_pos = 0;
+
+  /// @brief Track whether the cursor was drawn at the time of the
+  /// last draw. Set by apply(), used by redraw_border.
+  bool _last_draw_cursor = false;
+
+  /// @brief Range of column indices, held around to avoid repetitive
+  /// construction if needed
+  std::vector<size_t> _col_range{};
+
   /// @brief The table's cursor. Only used if draw_cursor is set.
   std::atomic_size_t _cursor_pos = 0;
-
-  std::pair<size_t, size_t> _last_drawn_cursor = {
-      std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
 
   /** @brief Update the base plane to the given plane. Does not synchronize
    * access, as should only be called when a lock is already acquired. */
@@ -178,6 +191,18 @@ private:
   /** @brief Rebuild the table's column planes, starting at the first column.
    * Does not synchronize access. */
   void rebuild_columns() noexcept;
+
+  /** @brief Draw/redraw the table's border. Does not check if border
+   * should be drawn, so only call after first checking. Does not
+   * synchronize access. */
+  void redraw_border() noexcept;
+
+  /** @brief Draw/redraw the cursor for every given column. Does not
+   * check if cursor should be drawn, so only call affter first
+   * checking. Does not synchronize access. */
+  std::expected<void, UI::RenderErr>
+  redraw_cursor(size_t const, std::vector<size_t> const &, bool const,
+                bool const, std::unordered_set<size_t> &&) noexcept;
 
 public:
   // Properties
@@ -273,10 +298,6 @@ public:
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */
   std::expected<void, UI::RenderErr> apply(ncpp::Plane *const) noexcept;
-
-  /** @brief Apply select rows to a plane. Does not synchronize plane access. */
-  std::expected<void, UI::RenderErr> apply_row(ncpp::Plane *const,
-                                               size_t const) noexcept;
 
   /** @brief Set the string at the specified row and column to the given value.
    * Cell must be within the table's current dimensions. Returns expected

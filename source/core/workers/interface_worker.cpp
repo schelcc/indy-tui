@@ -112,8 +112,14 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 
     leaderboard_view->as<UI::Views::LeaderboardView>().set_columns(
         {{Columns::Rank, "Rank"},
-         {Columns::PitStatus<SessionType::PRACTICE>, " ", UI::Align::RIGHT},
-         {Columns::DriverName<SessionType::PRACTICE>, "Name", UI::Align::LEFT},
+         {Columns::PitStatus<SessionType::PRACTICE>,
+          " ",
+          UI::Align::RIGHT,
+          {true, false}},
+         {Columns::DriverName<SessionType::PRACTICE>,
+          "Name",
+          UI::Align::LEFT,
+          {false, true}},
          {Columns::Interval, "Interval"},
          {Columns::Gap, "Gap"},
          {Columns::Throttle, "Throttle %"},

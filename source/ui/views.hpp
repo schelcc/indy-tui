@@ -76,16 +76,18 @@ struct LeaderboardView {
     ColumnFunc func;
     UI::String name;
     UI::Align align;
+    BorderCfg border_cfg;
 
     template <typename F>
       requires(std::is_invocable_v<F, Telemetry::DriverTelemetry const &> &&
                Core::IsOneOf<
                    std::invoke_result_t<F, Telemetry::DriverTelemetry const &>,
                    UI::String, std::string, std::wstring>)
-    ColumnInfo(F &&f, UI::String &&s, UI::Align a = UI::Align::LEFT)
+    ColumnInfo(F &&f, UI::String &&s, UI::Align const a = UI::Align::LEFT,
+               BorderCfg const b_cfg = {true, true})
         : func([f = std::forward<F>(f)](Telemetry::DriverTelemetry const &d)
                    -> UI::String { return std::invoke(f, d); }),
-          name(s), align(a) {}
+          name(s), align(a), border_cfg(b_cfg) {}
 
     // TODO - After profile move this to multistr to support returning regular
     // string and wstring

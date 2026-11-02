@@ -17,6 +17,34 @@ namespace Tools::Draw {
 static constexpr std::wstring_view PROGBAR_CHARS_FULL_HEIGHT = L" ▏▎▍▌▋▊▉";
 static constexpr std::wstring_view PROGBAR_CHARS_NARROW = L"╌┄┈";
 
+namespace BOXDRAW_BASE {
+static constexpr wchar_t VERT = L'│';
+static constexpr wchar_t HORI = L'─';
+
+static constexpr wchar_t T_L = L'┤';
+static constexpr wchar_t T_R = L'├';
+static constexpr wchar_t T_U = L'┴';
+static constexpr wchar_t T_D = L'┬';
+
+static constexpr wchar_t CROSS = L'┼';
+}; // namespace BOXDRAW_BASE
+
+namespace BOXDRAW_STRAIGHT {
+using namespace BOXDRAW_BASE;
+static constexpr wchar_t LL = L'└';
+static constexpr wchar_t LR = L'┘';
+static constexpr wchar_t UL = L'┌';
+static constexpr wchar_t UR = L'┐';
+}; // namespace BOXDRAW_STRAIGHT
+
+namespace BOXDRAW_ROUND {
+using namespace BOXDRAW_BASE;
+static constexpr wchar_t LL = L'╰';
+static constexpr wchar_t LR = L'╯';
+static constexpr wchar_t UL = L'╭';
+static constexpr wchar_t UR = L'╮';
+}; // namespace BOXDRAW_ROUND
+
 enum class BarType {
   FULL_HEIGHT,
   SHORT,

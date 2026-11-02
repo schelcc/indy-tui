@@ -6,7 +6,9 @@
 #include <iterator>
 #include <mutex>
 
+#include <ncpp/NCBox.hh>
 #include <ncpp/Plane.hh>
+#include <notcurses/notcurses.h>
 #include <ranges>
 #include <stdexcept>
 #include <unordered_set>
@@ -22,6 +24,32 @@
 #include "ui/widget.hpp"
 
 namespace UI {
+
+/* Local-only helpers */
+inline std::expected<void, UI::RenderErr>
+draw_row(bool const drawing_border, Table::Column const &col,
+         ncpp::Plane &plane, std::optional<UI::String> const &row,
+         size_t const row_offset, UI::String const &empty_cell) noexcept {
+  auto row_s = row.value_or(empty_cell);
+
+  size_t x = 0;
+
+  switch (col.props.align) {
+  case Align::LEFT:
+    break;
+  case Align::CENTER:
+    x = (col.max_width - row_s.size()) / 2;
+    break;
+  case Align::RIGHT:
+    x = (col.max_width - row_s.size());
+    break;
+  }
+
+  x += drawing_border;
+
+  return row_s.apply_to_plane(&plane, row_offset, x,
+                              col.max_width + drawing_border);
+}
 
 /* Column methods */
 bool Table::Column::recalculate_width(UI::String const &default_str) {
@@ -104,7 +132,77 @@ void Table::rebuild_columns() noexcept {
 
   _col_planes.shrink_to_fit();
 
+  // Always force a remapping of cursor rows after rebuilds
+  _table_row_ypos_map.clear();
+
   _needs_rebuild = false;
+}
+
+std::expected<void, UI::RenderErr>
+Table::redraw_cursor(size_t const cursor_index,
+                     std::vector<size_t> const &redraw_indices,
+                     bool const cursor_moved, bool const drawing_border,
+                     std::unordered_set<size_t> &&sep_rows) noexcept {
+  size_t cursor_ypos = cursor_index;
+
+  size_t last_cursor_index = _last_cursor_pos;
+  size_t last_cursor_ypos = _last_cursor_pos;
+
+  _last_cursor_pos = cursor_index;
+
+  // If we're drawing the border there's a likelihood our index
+  // doesn't match our ypos, so use the mapping to go from index to
+  // plane ypos
+  if (draw_border.test()) {
+    if (_table_row_ypos_map.empty()) {
+      size_t ypos = drawing_border;
+      size_t row_idx = 0;
+
+      auto row_num = dim.get_const()->rows;
+      while (row_idx < row_num) {
+        _table_row_ypos_map.emplace_back(ypos);
+        ypos += (1 + sep_rows.contains(row_idx++));
+      }
+    }
+
+    cursor_ypos = _table_row_ypos_map.at(cursor_index);
+    last_cursor_ypos = _table_row_ypos_map.at(last_cursor_index);
+  }
+
+  auto color = Tools::Draw::mask_pal_channels(_plane, Tools::Draw::Target::BG,
+                                              UI::Color::BLUE_SOFT);
+
+  // If the cursor moved, we need to draw all columns, otherwise we
+  // just need to redraw any columns that were redrawn earlier
+  for (auto col_idx : redraw_indices) {
+    auto &col = _table.at(col_idx);
+    auto &plane = _col_planes.at(col_idx);
+
+    if (cursor_moved) {
+      // Re-draw prior row
+      TRY_DROP(draw_row(drawing_border, col, plane,
+                        col.rows.at(last_cursor_index), last_cursor_ypos,
+                        empty_cell));
+
+      // If drawing border, Replace the the previous row's border
+      // cells with the current row's border cells to erase prior
+      // cursor stain w/o redrawing all borders
+      if (draw_border.test()) {
+        ncpp::Cell base_cell;
+
+        plane.get_at(cursor_ypos, 0, base_cell);
+        plane.putc(last_cursor_ypos, 0, base_cell);
+
+        plane.get_at(cursor_ypos, plane.get_dim_x() - 1, base_cell);
+        plane.putc(last_cursor_ypos, plane.get_dim_x() - 1, base_cell);
+      }
+    }
+
+    plane.stain(cursor_ypos, 0, 1, plane.get_dim_x(), color, color, color,
+                color);
+  }
+
+  return {};
 }
 
 /* Table public methods */
@@ -158,6 +256,10 @@ void Table::set_dim(Table::Dim const &d) noexcept {
 
   std::unique_lock lock(_mtx);
   _table = std::vector<Column>(d.cols, d.rows);
+
+  // Generate a vec of indices so we can avoid doing so repetitively later
+  _col_range = std::views::iota(0) | std::views::take(_table.size()) |
+               std::ranges::to<std::vector<size_t>>();
 
   *old_dim = d;
 
@@ -307,144 +409,106 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
         UI::RenderErr::Source::WIDGET, UI::RenderErr::NULL_PLANE,
         "Tried to apply table when table's internal plane is null");
 
-  if (_needs_rebuild)
+  const bool drawing_cursor = draw_cursor.test();
+  const bool drawing_border = draw_border.test();
+
+  const bool to_redraw_border = drawing_border && _needs_rebuild;
+
+  if (_needs_rebuild) {
     rebuild_columns();
   }
 
   App::AppContext::Log().debug("Draw table {}", name);
 
-  bool drawing_border = draw_border.test();
-
-  // Single-row draw procedure
-  auto draw_row = [drawing_border](Column const &col, ncpp::Plane &plane,
-                                   std::optional<UI::String> const &row,
-                                   size_t const row_offset,
-                                   UI::String const &empty_cell) {
-    auto row_s = row.value_or(empty_cell);
-
-    size_t x = 0;
-
-    switch (col.props.align) {
-    case Align::LEFT:
-      break;
-    case Align::CENTER:
-      x = (col.max_width - row_s.size()) / 2;
-      break;
-    case Align::RIGHT:
-      x = (col.max_width - row_s.size());
-      break;
-    }
-
-    x += drawing_border;
-
-    return row_s.apply_to_plane(&plane, row_offset, x, col.max_width);
-  };
-
-  // Pair column planes, then filter out any columns which are not damaged
-  auto v = std::views::zip(_table, _col_planes) |
+  // Group columns, their planes, and their index, then filter out any
+  // columns which are not damaged
+  auto v = std::views::zip(_table, _col_planes, std::views::iota(0)) |
            std::views::filter(
                [](auto const &p) -> bool { return std::get<0>(p).damaged; });
 
-  for (auto [col, plane] : v) {
-    plane.erase();
+  std::unordered_set<size_t> sep_rows = *separator_rows.get_const();
 
+  // Track which columns we've updated so that we can limit cursor
+  // drawing to them, if drawing cursor
+  std::vector<size_t> to_redraw_cursor{};
+
+  if (drawing_cursor)
+    to_redraw_cursor.reserve(_table.size());
+
+  for (auto [col, plane, idx] : v) {
+    size_t row_idx = 0;
     size_t row_offset = drawing_border;
 
     for (auto const &row : col.rows) {
-      TRY_DROP(draw_row(col, plane, row, row_offset, empty_cell));
+      TRY_DROP(
+          draw_row(drawing_border, col, plane, row, row_offset, empty_cell));
 
-      row_offset++;
+      row_offset += (1 + sep_rows.contains(row_idx++));
     }
+
+    if (drawing_cursor)
+      to_redraw_cursor.emplace_back(idx);
 
     col.damaged = false;
   }
 
-  if (draw_cursor.test()) {
-    size_t cursor_index = _cursor_pos.load();
-    size_t cursor_ypos = cursor_index;
+  // Draw cursor
+  const size_t cursor_index = _cursor_pos.load();
+  const bool cursor_moved = cursor_index != _last_cursor_pos;
 
-    // Calculate the drawn position of the cursor if drawing border
-    if (draw_border.test()) {
-      auto sep_rows = separator_rows.get_const();
-
-      size_t cursor = cursor_ypos;
-      size_t plane_cursor = 0;
-      size_t cursor_index = 0;
-
-      while (cursor_index < cursor) {
-        // row_before should lag behind the plane cursor
-
-        while (sep_rows->contains(plane_cursor))
-          plane_cursor++;
-
-        cursor_index++;
-      }
-
-      cursor_ypos = plane_cursor;
-    }
-
-    std::pair<size_t, size_t> to_redraw_row{cursor_index, cursor_ypos};
-
-    _last_drawn_cursor.swap(to_redraw_row);
-
-    auto [last_index, last_ypos] = to_redraw_row;
-
-    bool to_redraw = last_index < dim.get_const()->rows;
-
-    for (auto [col, plane] : std::ranges::zip_view{_table, _col_planes}) {
-      // Re-draw prior row
-      if (to_redraw)
-        draw_row(col, plane, col.rows.at(last_index), last_ypos, empty_cell);
-
-      auto color = Tools::Draw::mask_pal_channels(
-          &plane, Tools::Draw::Target::BG, UI::Color::BLUE_SOFT);
-
-      plane.stain(cursor_ypos, 0, 1, plane.get_dim_x(), color, color, color,
-                  color);
-    }
+  // Only draw/redraw cursor if it has moved, or if some number of
+  // columns were redrawn earlier
+  if (drawing_cursor && (cursor_moved || !to_redraw_cursor.empty())) {
+    auto &redraw_indices = cursor_moved ? _col_range : to_redraw_cursor;
+    TRY_DROP(redraw_cursor(cursor_index, redraw_indices, cursor_moved,
+                           drawing_border, std::move(sep_rows)));
   }
+
+  // If we're not drawing the cursor but just last render were, redraw
+  // the border to erase the border's cursor stain
+  if (to_redraw_border || (!drawing_cursor && _last_draw_cursor))
+    redraw_border();
+
+  _last_draw_cursor = drawing_cursor;
 
   return {};
 }
 
-std::expected<void, UI::RenderErr>
-Table::apply_row(ncpp::Plane *const p, size_t const row_idx) noexcept {
-  std::unique_lock lock(_mtx);
+void Table::redraw_border() noexcept {
+  auto color = Tools::Draw::mask_pal_channels(_plane, Tools::Draw::Target::FG,
+                                              UI::Color::NONE);
 
-  if (_plane != p)
-    update_baseplane(p);
+  namespace BOXDRAW_SET = Tools::Draw::BOXDRAW_ROUND;
 
-  if (_plane == nullptr)
-    return UI::RenderErr(
-        UI::RenderErr::Source::WIDGET, UI::RenderErr::NULL_PLANE,
-        "Tried to apply table row when table's internal plane is null");
+  for (auto [col, plane] : std::ranges::zip_view{_table, _col_planes}) {
+    auto border_mask = ncpp::NCBox::CornerMask;
 
-  if (_needs_rebuild)
-    rebuild_columns();
+    border_mask |= (!col.props.border_cfg.left * ncpp::NCBox::MaskLeft);
 
-  for (std::pair<Column &, ncpp::Plane &> col_pair :
-       std::ranges::zip_view(_table, _col_planes)) {
-    auto &[col, plane] = col_pair;
-    auto row_s = col.rows.at(row_idx).value_or(empty_cell);
-    size_t x;
+    plane.putwch(
+        0, 0, col.props.border_cfg.left ? BOXDRAW_SET::T_D : BOXDRAW_SET::HORI);
+    plane.putwch(plane.get_dim_y() - 1, 0,
+                 col.props.border_cfg.left ? BOXDRAW_SET::T_U
+                                           : BOXDRAW_SET::HORI);
 
-    switch (col.props.align) {
-    case Align::LEFT:
-      x = 0;
-      row_s.apply_to_plane(&plane, row_idx, 0, col.max_width);
-      break;
-    case Align::CENTER:
-      x = (col.max_width - row_s.size()) / 2;
-      break;
-    case Align::RIGHT:
-      x = (col.max_width - row_s.size());
-      break;
+    // If not drawing a left-border, draw a space char there
+    if (!col.props.border_cfg.left) {
+      ncpp::Cell c(' ');
+      plane.cursor_move(1, 0);
+      plane.vline(c, plane.get_dim_y() - 2);
     }
 
-    row_s.apply_to_plane(&plane, row_idx, x, col.max_width);
+    plane.perimeter_rounded(0, color, border_mask);
   }
 
-  return {};
+  auto &leftmost = _col_planes.front();
+  leftmost.putwch(0, 0, BOXDRAW_SET::UL);
+  leftmost.putwch(leftmost.get_dim_y() - 1, 0, BOXDRAW_SET::LL);
+
+  auto &rightmost = _col_planes.back();
+  auto xpos = rightmost.get_dim_x() - 1;
+  rightmost.putwch(0, xpos, BOXDRAW_SET::UR);
+  rightmost.putwch(rightmost.get_dim_y() - 1, xpos, BOXDRAW_SET::LR);
 }
 
 std::expected<void, WidgetErr> Table::set_at(size_t const row, size_t const col,
@@ -582,15 +646,11 @@ Table::update_col(size_t const col,
 
   auto &target_col = _table.at(col);
 
-  // target_col.damaged =
-  //     target_col.damaged ||
-  //     !std::ranges::equal(
-  //         new_col,
-  //         std::ranges::take_view(target_col.rows, target_col.rows.size()));
   auto new_it = new_col.cbegin();
   auto old_it = target_col.rows.cbegin();
 
-  while (!target_col.damaged)
+  while (!target_col.damaged && (new_it < new_col.cend()) &&
+         (old_it < target_col.rows.cend()))
     target_col.damaged = *(new_it++) == *(old_it++);
 
   target_col.rows = std::move(new_col);
@@ -635,7 +695,8 @@ Table::update_col(size_t const col, size_t const row_offset,
   auto new_it = new_col.cbegin();
   auto old_it = target_col.rows.cbegin();
 
-  while (!target_col.damaged)
+  while (!target_col.damaged && (new_it < new_col.cend()) &&
+         (old_it < target_col.rows.cend()))
     target_col.damaged = *(new_it++) == *(old_it++);
 
   std::move(std::begin(new_col), std::end(new_col),

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -106,11 +107,12 @@ public:
     for (auto const &[style, color, start, length] : fmts) {
       if (color != Color::NONE) {
         auto chan = MakeChannels(p, color);
-        p->stain(row, start, 1, length, chan, chan, chan, chan);
+        p->stain(row, col + start, 1, length, chan, chan, chan, chan);
       }
 
       if (style.style != static_cast<uint16_t>(Style::NORMAL))
-        p->format(row, start, 1, length, static_cast<uint16_t>(style.style));
+        p->format(row, col + start, 1, length,
+                  static_cast<uint16_t>(style.style));
     }
 
     if ((col + str.size()) < padding_to_col)
