@@ -19,6 +19,7 @@ namespace App {
 namespace Perf {
 
 constexpr size_t PERF_WINDOW_LEN = 64;
+constexpr Time::Duration::UIntMilliSec PERF_LOG_PERIOD{250ul};
 
 template <size_t... Idxs>
 Time::Duration::DblMilliSec unrolled_avg(
@@ -39,6 +40,34 @@ static std::vector<std::function<void(spdlog::logger *)>> &PerfLogCalls() {
   return v;
 }
 
+struct OccurrenceCount {
+  std::atomic_size_t period_occ = 0;
+  std::atomic_size_t total = 0;
+
+  void occur() noexcept {
+    period_occ.fetch_add(1, std::memory_order_seq_cst);
+    total.fetch_add(1, std::memory_order_seq_cst);
+  }
+
+  double log_avg() noexcept {
+    return static_cast<double>(
+               period_occ.exchange(0, std::memory_order_seq_cst)) /
+           static_cast<double>(Perf::PERF_LOG_PERIOD.count());
+  }
+
+  OccurrenceCount(std::string &&name) {
+    auto log_call = [this](std::string_view n, spdlog::logger *l) {
+      l->info("{},{:.4f} times / {} ms,{} times total", n, log_avg(),
+              Perf::PERF_LOG_PERIOD.count(),
+              total.load(std::memory_order_seq_cst));
+    };
+    PerfLogCalls().emplace_back(
+        [name = std::move(name), f = std::move(log_call)](spdlog::logger *l) {
+          f(name, l);
+        });
+  }
+};
+
 struct GateToGate {
   mutable std::mutex mtx;
   std::array<Time::Duration::DblMilliSec, PERF_WINDOW_LEN> data{};
@@ -46,22 +75,22 @@ struct GateToGate {
 
   Time::TimePoint start_t;
 
-  void start() {
+  void start() noexcept {
     std::scoped_lock lock(mtx);
     start_t = Time::Clock::now();
   }
 
-  void stop() {
+  void stop() noexcept {
     std::scoped_lock lock(mtx);
     data[pos.fetch_add(1) % PERF_WINDOW_LEN] = Time::Clock::now() - start_t;
   }
 
-  Time::Duration::DblMilliSec avg() {
+  Time::Duration::DblMilliSec avg() noexcept {
     std::scoped_lock lock(mtx);
     return unrolled_avg(data);
   }
 
-  GateToGate(std::string &&name) {
+  GateToGate(std::string &&name) noexcept {
     auto log_call = [this](std::string_view n, spdlog::logger *l) {
       l->info("{},{:.4f} ms,{}", n, avg().count(), PERF_WINDOW_LEN);
     };
@@ -78,17 +107,17 @@ struct SingleShot {
   std::array<Time::Duration::DblMilliSec, PERF_WINDOW_LEN> data{};
   std::atomic_size_t pos = 0;
 
-  void collect(Time::Duration::DblMilliSec &&t) {
+  void collect(Time::Duration::DblMilliSec &&t) noexcept {
     std::scoped_lock lock(mtx);
     data[pos.fetch_add(1) % PERF_WINDOW_LEN] = t;
   }
 
-  Time::Duration::DblMilliSec avg() {
+  Time::Duration::DblMilliSec avg() noexcept {
     std::scoped_lock lock(mtx);
     return unrolled_avg(data);
   }
 
-  SingleShot(std::string &&name) {
+  SingleShot(std::string &&name) noexcept {
     auto log_call = [this](std::string_view n, spdlog::logger *l) {
       l->info("{},{:.4f} ms,{}", n, avg().count(), PERF_WINDOW_LEN);
     };
@@ -119,13 +148,17 @@ struct SingleShot {
   static void Start##name() { Get().start_##name(); }                          \
   static void Stop##name() { Get().stop_##name(); }
 
+#define PERF_ASPECT_OCC_CNT(name)                                              \
+  Perf::OccurrenceCount _##name{#name};                                        \
+  void occur_##name() { _##name.occur(); }                                     \
+  static void Occur##name() { Get().occur_##name(); }
+
 class PerfContext {
   std::mutex mtx_;
 
   std::shared_ptr<spdlog::logger> logger_;
 
   std::jthread logging_thread_;
-  static constexpr Time::Duration::UIntMilliSec PERF_LOG_PERIOD{250ul};
 
 public:
   static PerfContext &Get() {
@@ -138,6 +171,8 @@ public:
   PERF_ASPECT_G2G(LeaderboardPopulationTime);
   PERF_ASPECT_G2G(RenderTime);
   PERF_ASPECT_G2G(InformBoardTime);
+
+  PERF_ASPECT_OCC_CNT(StringDtorCount);
 
   PerfContext() {
     try {
@@ -155,7 +190,7 @@ public:
           auto last_tick = Time::Clock::now();
           Time::TimePoint block_until;
           while (!stop_tok.stop_requested()) {
-            block_until = last_tick + PERF_LOG_PERIOD;
+            block_until = last_tick + Perf::PERF_LOG_PERIOD;
             for (auto &f : Perf::PerfLogCalls())
               f(logger.get());
             std::this_thread::sleep_until(block_until);
