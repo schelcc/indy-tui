@@ -143,11 +143,17 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
   }
 
   std::jthread render_thread =
-      std::jthread{[&render_mtx, this](std::stop_token stop_tok) {
+      std::jthread{[&render_mtx, std_plane](std::stop_token stop_tok) {
         while (!stop_tok.stop_requested()) {
           std::this_thread::sleep_for(Time::Duration::UIntMilliSec(50));
-          std::unique_lock lock = render_mtx.lock_unique();
-          nc.render();
+          {
+            auto lock = render_mtx.lock_unique();
+            ncpile_render(std_plane->to_ncplane());
+          }
+          // {
+          //   auto lock = render_mtx.lock_shared();
+          ncpile_rasterize(std_plane->to_ncplane());
+          // }
         }
       }};
 
