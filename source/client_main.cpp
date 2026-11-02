@@ -1,17 +1,24 @@
+#include <array>
 #include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <print>
 #include <pthread.h>
 #include <queue>
 #include <spdlog/common.h>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <google/protobuf/descriptor.h>
@@ -145,6 +152,13 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   //     enabled") .set_long_opt("log-out") .set_default_input("indy-tui.log")
   //     .set_handler([](std::string_view const s) { return s; });
 
+  parser.add_element<Flag>("ncstats")
+      .set_help_msg("Whether to print notcurses stats upon graceful exit. "
+                    "Stats will not be "
+                    "print upon ungraceful exit regardless of this flag.")
+      .set_long_opt("nc-stats")
+      .set_default_state(false);
+
   parser.add_element<Option>("log level")
       .set_help_msg(
           "What level of information to include in the logging, if "
@@ -188,6 +202,14 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   App::AppContext::Log().set_level(
       parser.get<Option, spdlog::level::level_enum>("log level"));
+
+  /* Everything after this will interact w/ notcurses */
+
+  /*
+  // Maybe temporary, install a terminate handler which kills
+  // notcurses, so hopefully we can retain the terminal
+  std::set_terminate(&on_terminate);
+  */
 
   if (parser.get<Flag, bool>("display demo")) {
     // Will not return to main from here. Set up a minimum runtime context with
@@ -259,7 +281,8 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   setlocale(LC_ALL, "");
   notcurses_options nc_opts{};
 
-  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
+  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS |
+                  NCOPTION_SUPPRESS_BANNERS;
 
   ncpp::NotCurses nc{nc_opts};
 
@@ -283,7 +306,72 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   sess.end_session();
 
+  auto stats = nc.stats_alloc();
+  nc.get_stats(stats);
+
+  using Time::Duration::ranging_sec_print;
+  using Time::Duration::UIntNanoSec;
+
+  // clang-format off
+  auto const render_ns		= UIntNanoSec(stats->render_ns);
+  auto const render_max_ns	= UIntNanoSec(stats->render_max_ns);
+  auto const render_min_ns	= UIntNanoSec(stats->render_min_ns);
+  auto const render_avg_ns	= render_ns / stats->renders;
+
+  auto const raster_ns		= UIntNanoSec(stats->raster_ns);
+  auto const raster_max_ns	= UIntNanoSec(stats->raster_max_ns);
+  auto const raster_min_ns	= UIntNanoSec(stats->raster_min_ns);
+  auto const raster_avg_ns	= raster_ns / stats->writeouts;
+
+  auto const writeout_ns	= UIntNanoSec(stats->writeout_ns);
+  auto const writeout_max_ns	= UIntNanoSec(stats->writeout_max_ns);
+  auto const writeout_min_ns	= UIntNanoSec(stats->writeout_min_ns);
+  auto const writeout_avg_ns	= writeout_ns / stats->writeouts;
+
+  double const total_write_ns		= writeout_ns.count() + raster_ns.count();
+
+  double const raster_shareof_write	= (raster_ns.count() / total_write_ns) * 100;
+  double const writeout_shareof_write	= (writeout_ns.count() / total_write_ns) * 100;
+
+  double const pct_elisions = (static_cast<double>(stats->cellelisions)
+			       / (stats->cellelisions + stats->cellemissions)) * 100;
+  // clang-format on
+
+  // Collect stat strings in a vec so we can put them in both log and stdout
+  // if requested
+  std::vector<std::string> s{
+      std::format("render time   -- max: {:>9} / min: {:>9} / avg: {:>9}",
+                  ranging_sec_print(render_max_ns),
+                  ranging_sec_print(render_min_ns),
+                  ranging_sec_print(render_avg_ns)),
+      std::format("raster time   -- max: {:>9} / min: {:>9} / avg: {:>9}",
+                  ranging_sec_print(raster_max_ns),
+                  ranging_sec_print(raster_min_ns),
+                  ranging_sec_print(raster_avg_ns)),
+      std::format("writeout time -- max: {:>9} / min: {:>9} / avg: {:>9}",
+                  ranging_sec_print(writeout_max_ns),
+                  ranging_sec_print(writeout_min_ns),
+                  ranging_sec_print(writeout_avg_ns)),
+      std::format("rasters vs. writes -- {} / {}", stats->renders,
+                  stats->writeouts),
+      std::format("raster's share of total write   -- {:.2f}%",
+                  raster_shareof_write),
+      std::format("writeout's share of total write -- {:.2f}%",
+                  writeout_shareof_write),
+      std::format("cells emitted  -- {}", stats->cellemissions),
+      std::format("cells ellided  -- {}", stats->cellelisions),
+      std::format("% cell elision -- {:.2f}%", pct_elisions)};
+
   nc.stop();
+
+  for (auto const &line : s) {
+    App::AppContext::Log().info("{}", line);
+  }
+
+  if (parser.get<Flag, bool>("ncstats")) {
+    for (auto const &line : s)
+      std::println("{}", line);
+  }
 
   App::AppContext::Log().info("Exiting");
 }
