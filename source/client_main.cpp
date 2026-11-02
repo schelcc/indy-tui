@@ -75,6 +75,20 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
               std::format("Invalid input for mode: '{}'", s));
       });
 
+  parser.add_element<Option>("initial delay")
+      .set_help_msg(
+          "Delay to start session with, in seconds. Defaults to '0s'.")
+      .set_long_opt("delay")
+      .set_default_input("0")
+      .set_handler([](std::string_view const s) -> size_t {
+        try {
+          return std::stoul(s.data());
+        } catch (std::invalid_argument &) {
+          throw CLI::InputParsingErr(
+              std::format("Invalid input for initial delay: '{}'", s));
+        }
+      });
+
   parser.add_element<Option>("source")
       .set_help_msg("Path to the telemetry session to replay")
       .set_long_opt("source")
@@ -181,6 +195,35 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
               std::format("Invalid input for log level: '{}'", s));
       });
 
+#ifndef NDEBUG
+  /* Flag added only in debug builds */
+  parser.add_element<Option>("timed")
+      .set_help_msg(
+          "Run the program for the given amount of time. Counts from start of "
+          "program, not from start of session. If no unit is given, assumes "
+          "seconds. Allowable units are 's', 'min'. Expects non-negative "
+          "integer with a unit suffix, like '10s' for ten seconds.")
+      .set_long_opt("timed")
+      .set_default_input("0")
+      .set_handler([](std::string_view const s) -> Time::Duration::UIntSec {
+        try {
+          if (s.ends_with("min")) {
+            return Time::Duration::UIntSec(
+                std::stoul(s.substr(0, s.length() - 3).data()) * 60);
+          } else if (s.ends_with("s")) {
+            return Time::Duration::UIntSec(
+                std::stoul(s.substr(0, s.length() - 1).data()));
+          } else {
+            return Time::Duration::UIntSec(std::stoul(s.data()));
+          }
+        } catch (std::invalid_argument &e) {
+          throw CLI::InputParsingErr(
+              std::format("Invalid input for time period: '{}'", s));
+        }
+      });
+
+#endif
+
   parser.finalize();
 
   try {
@@ -202,6 +245,26 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
 
   App::AppContext::Log().set_level(
       parser.get<Option, spdlog::level::level_enum>("log level"));
+
+  if (parser.get<Flag, bool>("serve replay")) {
+    // Will not return to main from here
+    std::jthread server{[&parser](std::stop_token stop) {
+      Workers::ServedReplayWorker worker(
+          parser.get<Option, std::string>("source"),
+          parser.get<Option, std::string>("hostname"),
+          parser.get<Option, size_t>("port"));
+      worker(stop);
+    }};
+
+    App::AppContext::AwaitShutdown();
+
+    std::println("Shutdown requested for reason '{}'",
+                 App::AppContext::GetReason().value_or(
+                     "no reason provided -- ungraceful shutdown"));
+
+    server.request_stop();
+    return EXIT_SUCCESS;
+  }
 
   /* Everything after this will interact w/ notcurses */
 
@@ -244,26 +307,6 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  if (parser.get<Flag, bool>("serve replay")) {
-    // Will not return to main from here
-    std::jthread server{[&parser](std::stop_token stop) {
-      Workers::ServedReplayWorker worker(
-          parser.get<Option, std::string>("source"),
-          parser.get<Option, std::string>("hostname"),
-          parser.get<Option, size_t>("port"));
-      worker(stop);
-    }};
-
-    App::AppContext::AwaitShutdown();
-
-    std::println("Shutdown requested for reason '{}'",
-                 App::AppContext::GetReason().value_or(
-                     "no reason provided -- ungraceful shutdown"));
-
-    server.request_stop();
-    return EXIT_SUCCESS;
-  }
-
   std::queue<Input::KeyWithMod> key_queue{};
   std::mutex key_queue_mtx{};
   std::condition_variable_any key_cond{};
@@ -271,7 +314,7 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   std::atomic_flag running{true};
   Core::Session sess(parser.get<Arg, Core::SessionSource>("mode"));
 
-  size_t delay = 2;
+  size_t delay = parser.get<Option, size_t>("initial delay");
 
   sess.set_delay_sec(delay);
 
@@ -290,6 +333,18 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
       nc, running, sess, key_cond, key_queue, key_queue_mtx}};
 
   pthread_setname_np(output_thread.native_handle(), "Display");
+
+#ifndef NDEBUG
+  std::jthread timed_program_thread;
+  Time::Duration::UIntSec timed_program_dur =
+      parser.get<Option, Time::Duration::UIntSec>("timed");
+  if (timed_program_dur.count() > 0) {
+    timed_program_thread = std::jthread{[dur = timed_program_dur] {
+      std::this_thread::sleep_for(dur);
+      App::AppContext::Shutdown("timed program duration completed");
+    }};
+  }
+#endif
 
   App::AppContext::AwaitShutdown();
   App::AppContext::Log().info("Shutdown requested for reason '{}'",
