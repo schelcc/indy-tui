@@ -5,6 +5,7 @@
 #include <expected>
 #include <format>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <string_view>
 
@@ -84,30 +85,34 @@ struct RenderErr {
     NOP = 3,
     TABLE_MISMATCH = 4,
     TABLE_ERR = 5,
+    STRING_OVERFLOW = 6
   };
 
-  enum Source : size_t { WIDGET = 0, VIEW = 1, LAYOUT = 2 };
+  enum Source : size_t { WIDGET = 0, VIEW = 1, LAYOUT = 2, STRING = 3 };
 
   // Todo : Once reflection is well supported use it here
-  static constexpr std::array<std::string_view, 6> REASON_STRS = {
-      "NullPlane", "PlaneOverflow", "PlaneUnderflow",
-      "NoOp",      "TableMismatch", "TableErr"};
+  static constexpr std::array<std::string_view, 7> REASON_STRS = {
+      "NullPlane",     "PlaneOverflow", "PlaneUnderflow", "NoOp",
+      "TableMismatch", "TableErr",      "StringOverflow"};
 
-  static constexpr std::array<std::string_view, 3> SOURCE_STRS = {
-      "Widget", "View", "Layout"};
+  static constexpr std::array<std::string_view, 4> SOURCE_STRS = {
+      "Widget", "View", "Layout", "String"};
 
   Source source;
   Reason reason;
   std::optional<std::string> msg;
+  std::source_location orig;
 
   [[nodiscard]] std::string what() const noexcept {
     return msg.has_value()
-               ? std::format("error {} originating in {} -- {}",
+               ? std::format(
+                     "error {} from source {} -- {}. Originated from {}:{}.",
+                     REASON_STRS[reason].data(), SOURCE_STRS[source].data(),
+                     msg.value(), orig.file_name(), orig.line())
+               : std::format("error {} from source {}. Originated from {}:{}",
                              REASON_STRS[reason].data(),
-                             SOURCE_STRS[source].data(), msg.value())
-               : std::format("error {} originating in {}",
-                             REASON_STRS[reason].data(),
-                             SOURCE_STRS[source].data());
+                             SOURCE_STRS[source].data(), orig.file_name(),
+                             orig.line());
   }
 
   // Allow implicit conversion of RenderErr to std::expected<T, RenderErr> in
@@ -116,9 +121,12 @@ struct RenderErr {
     return std::unexpected(*this);
   }
 
-  RenderErr(Source s, Reason r) : source(s), reason(r), msg(std::nullopt) {}
-  RenderErr(Source s, Reason r, std::string &&m)
-      : source(s), reason(r), msg(std::move(m)) {}
+  RenderErr(Source s, Reason r,
+            std::source_location l = std::source_location::current())
+      : source(s), reason(r), msg(std::nullopt), orig(l) {}
+  RenderErr(Source s, Reason r, std::string &&m,
+            std::source_location l = std::source_location::current())
+      : source(s), reason(r), msg(std::move(m)), orig(l) {}
 };
 
 }; // namespace UI

@@ -99,8 +99,19 @@ public:
   }
 
   // Templating column index to permit both lvalue and rvalue references
-  void apply_to_plane(ncpp::Plane *const p, size_t const row, size_t const col,
-                      size_t const padding_to_col = 0) const noexcept {
+  std::expected<void, RenderErr>
+  apply_to_plane(ncpp::Plane *const p, size_t const row, size_t const col,
+                 size_t const padding_to_col = 0,
+                 std::source_location loc =
+                     std::source_location::current()) const noexcept {
+    if ((col + str.size()) > p->get_dim_x())
+      return RenderErr(
+          RenderErr::Source::STRING, RenderErr::STRING_OVERFLOW,
+          std::format("Tried to apply string of length {} starting at column "
+                      "{} to plane of width {}, which would result in drawing "
+                      "beyond the plane's end.",
+                      str.size(), col, p->get_dim_x()),
+          loc);
 
     p->putstr(row, col, str.c_str());
 
@@ -119,6 +130,8 @@ public:
       p->putstr(
           row, col + str.size(),
           std::wstring(padding_to_col - (col + str.size()), L' ').c_str());
+
+    return {};
   }
 
   String(std::string const &s, Color const color,
