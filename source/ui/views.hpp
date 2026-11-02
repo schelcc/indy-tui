@@ -66,6 +66,10 @@ struct SessionStatusView {
 
 private:
   FocusState _prev_focus = FocusState::INIT;
+
+  std::vector<std::optional<UI::String>> _swap_col =
+      std::vector<std::optional<UI::String>>(SessionStatusView::ROWS,
+                                             std::nullopt);
 };
 
 struct LeaderboardView {
@@ -141,6 +145,8 @@ private:
   ThreadSafe::Locked<size_t> _num_drivers;
 
   FocusState _prev_focus = FocusState::INIT;
+
+  std::vector<std::optional<UI::String>> _swap_col{};
 
   void reconstruct_table(ThreadSafe::LockPair<TableInfo> &&) noexcept;
 

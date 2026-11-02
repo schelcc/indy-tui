@@ -708,6 +708,47 @@ Table::update_col(size_t const col, size_t const row_offset,
   return {};
 }
 
+std::expected<void, WidgetErr> Table::swp_update_col(
+    size_t const col,
+    std::vector<std::optional<UI::String>> &swp_col) noexcept {
+  auto const d = *dim.get_const();
+
+  if ((col >= d.cols) || (swp_col.size() != d.rows)) {
+    std::string why = "Tried to swap invalid table column";
+
+    if (col >= d.cols)
+      why += std::format(", column {} requested when max column is {}", col,
+                         d.cols - 1);
+
+    if (swp_col.size() != d.rows)
+      why += std::format(
+          ", column to swap with contains {} rows when table contains {} rows",
+          swp_col.size(), d.rows);
+
+    App::AppContext::Log().warn("Problem encountered updating table -- {}",
+                                why);
+
+    return WidgetErr(WidgetErr::OUT_OF_RANGE);
+  }
+
+  std::unique_lock lock(_mtx);
+
+  auto &target_col = _table.at(col);
+
+  auto new_it = swp_col.cbegin();
+  auto old_it = target_col.rows.cbegin();
+
+  while (!target_col.damaged && (new_it < swp_col.cend()) &&
+         (old_it < target_col.rows.cend()))
+    target_col.damaged = *(new_it++) != *(old_it++);
+
+  target_col.rows.swap(swp_col);
+
+  _needs_rebuild = target_col.recalculate_width(empty_cell) || _needs_rebuild;
+
+  return {};
+}
+
 std::expected<void, WidgetErr> Table::clear_at(size_t const row,
                                                size_t const col) noexcept {
   auto const d = *dim.get_const();

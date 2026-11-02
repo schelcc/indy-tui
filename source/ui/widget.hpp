@@ -339,6 +339,15 @@ public:
   update_col(size_t const, size_t const,
              std::vector<std::optional<UI::String>> &&) noexcept;
 
+  /** @brief Swap the specified column with the given new column. All cells must
+   * fit within table's current dimensions. Returns expected containing void if
+   * successful, otherwise the error which occured. Beyond the vector lengths
+   * matching, the caller should assume an otherwise unspecified state for the
+   * swapped vector regardless of returned state. */
+  std::expected<void, WidgetErr>
+  swp_update_col(size_t const,
+                 std::vector<std::optional<UI::String>> &) noexcept;
+
   /** @brief Set the specified cell to empty. */
   std::expected<void, WidgetErr> clear_at(size_t const, size_t const) noexcept;
 

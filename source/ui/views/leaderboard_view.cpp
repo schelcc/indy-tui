@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <future>
 #include <iterator>
@@ -111,6 +112,9 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
     t->table.set_dim(Table::Dim(drivers->size(), t->cols.size()));
 
+    _swap_col =
+        std::vector<std::optional<UI::String>>(drivers->size(), std::nullopt);
+
     // Reset the cursor to be a large number which is 0 mod num drivers
     table_cursor = drivers->size() * 100;
 
@@ -152,21 +156,17 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
       App::PerfContext::StartLeaderboardPopulationTime();
 
-      // Create vec of pairs of position and async results
-      std::vector<ColStrPair> col_strs{};
-      col_strs.reserve(drivers->size() + 1);
+      std::expected<void, WidgetErr> res;
 
-      // For each column, add to col_strs an async call which applies the col
-      // func to the drivers vec
-      size_t pos = 0;
-      std::transform(
-          std::cbegin(t->cols), std::cend(t->cols),
-          std::back_inserter(col_strs),
-          [&drivers, &pos](ColumnInfo const &col_func) {
-            return std::make_tuple(
-                pos++, std::async(std::launch::async | std::launch::deferred,
-                                  apply_column, col_func, std::cref(*drivers)));
-          });
+      size_t col_idx = 0;
+
+      for (auto const &col : t->cols) {
+        std::transform(std::begin(*drivers), std::end(*drivers),
+                       std::begin(_swap_col), col);
+        res = t->table.swp_update_col(col_idx++, _swap_col);
+      }
+
+      App::PerfContext::StopLeaderboardPopulationTime();
 
       // Reorder backing keys
       auto backing_reorder_res = t->table.set_backing_keys(
@@ -193,15 +193,6 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
           break;
         }
       }
-
-      // Retrieve the value from the generated futures and populate the table
-      // accordingly
-      for (auto &[col_idx, val] : col_strs) {
-        [[maybe_unused]] auto res =
-            t->table.update_col(col_idx, std::move(val).get());
-      }
-
-      App::PerfContext::StopLeaderboardPopulationTime();
     }
   }
   // p->erase();
