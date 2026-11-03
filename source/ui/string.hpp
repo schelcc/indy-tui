@@ -9,6 +9,7 @@
 #include <iterator>
 #include <memory>
 #include <ranges>
+#include <source_location>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -20,10 +21,14 @@
 #include <ncpp/CellStyle.hh>
 #include <ncpp/Plane.hh>
 
+#include "app_context.hpp"
 #include "core/core.hpp"
 
+#include "perf.hpp"
 #include "ui/types.hpp"
 #include "ui/ui.hpp"
+
+#define TRACK_STR_DTOR
 
 template <typename T, typename S>
 concept IsNot = !std::is_same_v<T, S>;
@@ -78,6 +83,10 @@ private:
   std::vector<FmtPair> fmts{};
 
 public:
+#ifdef TRACK_STR_DTOR
+  ~String() { App::PerfContext::OccurStringDtorCount(); }
+#endif
+
   [[nodiscard]] size_t size() const noexcept { return str.size(); }
 
   template <typename S>
