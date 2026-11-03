@@ -6,6 +6,8 @@ build/*
 *.bin
 *.txt
 bak.*
+*perf.data*
+experiments/
 
 # Logging artifacts
 *.log
