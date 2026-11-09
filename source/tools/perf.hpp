@@ -49,15 +49,13 @@ struct OccurrenceCount {
     total.fetch_add(1, std::memory_order_seq_cst);
   }
 
-  double log_avg() noexcept {
-    return static_cast<double>(
-               period_occ.exchange(0, std::memory_order_seq_cst)) /
-           static_cast<double>(Perf::PERF_LOG_PERIOD.count());
+  size_t period_cnt() noexcept {
+    return period_occ.exchange(0, std::memory_order_seq_cst);
   }
 
   OccurrenceCount(std::string &&name) {
     auto log_call = [this](std::string_view n, spdlog::logger *l) {
-      l->info("{},{:.4f} times / {} ms,{} times total", n, log_avg(),
+      l->info("{},{} times / {} ms,{} times total", n, period_cnt(),
               Perf::PERF_LOG_PERIOD.count(),
               total.load(std::memory_order_seq_cst));
     };
