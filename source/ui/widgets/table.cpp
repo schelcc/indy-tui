@@ -250,8 +250,14 @@ size_t Table::move_cursor(UI::CursorDirection const d) noexcept {
 }
 
 std::string Table::cursor_backing_key() const noexcept {
+  // There's 100% a better way to do this
+  size_t const cursor = _cursor_pos.load();
+  size_t const adj = std::ranges::fold_left(
+      *cursor_skip_rows.get_const(), 0,
+      [cursor](size_t &&i, size_t r) -> size_t { return i + (r < cursor); });
+
   return (draw_cursor.test() && !no_backing_keys.test())
-             ? _backing_keys.at(_cursor_pos.load())
+             ? _backing_keys.at(cursor - adj)
              : "";
 }
 
