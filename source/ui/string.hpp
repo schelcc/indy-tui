@@ -143,9 +143,8 @@ public:
     }
 
     if ((col + str.size()) < padding_to_col)
-      p->putstr(
-          row, col + str.size(),
-          std::wstring(padding_to_col - (col + str.size()), L' ').c_str());
+      p->putstr(row, col + str.size(),
+                std::string(padding_to_col - (col + str.size()), ' ').c_str());
 
     return {};
   }
