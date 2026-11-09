@@ -30,9 +30,8 @@
 
 #define TRACK_STR_DTOR
 
-template <typename T, typename S>
-concept IsNot = !std::is_same_v<T, S>;
-
+/** @brief Convert a multi-byte char string to
+wstring. Thread-safe. */
 [[nodiscard]] static inline std::wstring
 str_to_wstr(std::string const &str) noexcept {
   std::wstring wstr(str.size(), L' ');
@@ -67,6 +66,9 @@ private:
     StyleSet() : style(static_cast<uint16_t>(UI::Style::NORMAL)) {};
   };
 
+  /** @brief Set of information required to format a string on a plane. Given a
+   * start position and length, applies the contained color and style to the
+   * string. */
   struct FmtPair {
     StyleSet style_set;
     UI::Color color;
@@ -89,9 +91,11 @@ public:
 
   [[nodiscard]] size_t size() const noexcept { return str.size(); }
 
+  /** @brief Append the given string to this string, returning a reference to
+   * this string. */
   template <typename S>
     requires requires(S s) { String(s); }
-  String &append(S &&s) {
+  String &append(S &&s) noexcept {
     if constexpr (std::is_same_v<std::remove_reference_t<S>, String>) {
       auto pre_size = str.size();
       str.append(std::forward_like<S>(s.str));
@@ -107,7 +111,10 @@ public:
     return *this;
   }
 
-  // Templating column index to permit both lvalue and rvalue references
+  /** @brief Try to render this string on a plane at the given row and column,
+   * returning a render error if the string could not be drawn. Can optionally
+   * provide a column to which space chars will be drawn, doing nothing if the
+   * drawn string reaches or extends past it. */
   std::expected<void, RenderErr>
   apply_to_plane(ncpp::Plane *const p, size_t const row, size_t const col,
                  size_t const padding_to_col = 0,
@@ -143,45 +150,56 @@ public:
     return {};
   }
 
+  /// @brief Construct a string given a char string, color, and any number of
+  /// styles
   String(std::string const &s, Color const color,
-         Core::IsOneOf<UI::Style> auto... stys)
+         Core::IsOneOf<UI::Style> auto... stys) noexcept
       : str(str_to_wstr(s)) {
     fmts.emplace_back(StyleSet(stys...), color, 0, str.size());
   }
 
-  String(std::string const &s, Color const color) : str(str_to_wstr(s)) {
+  /// @brief Construct a string given a char string, color
+  String(std::string const &s, Color const color) noexcept
+      : str(str_to_wstr(s)) {
     fmts.emplace_back(StyleSet(), color, 0, str.size());
   }
 
+  /// @brief Construct a string given a char string
   String(std::string const &s) : str(str_to_wstr(s)), fmts() {}
 
+  /// @brief Construct a string given a wstring, color, and any number of styles
   template <typename S>
     requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
-  String(S &&s, Color const color, Core::IsOneOf<UI::Style> auto... stys)
+  String(S &&s, Color const color,
+         Core::IsOneOf<UI::Style> auto... stys) noexcept
       : str(std::forward<S>(s)) {
     fmts.emplace_back(StyleSet(stys...), color, 0, str.size());
   }
 
+  /// @brief Construct a string given a wstring and color
   template <typename S>
     requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
-  String(S &&s, Color const color) : str(std::forward<S>(s)) {
+  String(S &&s, Color const color) noexcept : str(std::forward<S>(s)) {
     fmts.emplace_back(StyleSet(), color, 0, str.size());
   }
 
+  /// @brief Construct a string given a wstring
   template <typename S>
     requires(Core::IsOneOf_ignore_cvref<S, std::wstring>)
-  String(S &&s) : str(std::forward<S>(s)), fmts() {}
+  String(S &&s) noexcept : str(std::forward<S>(s)), fmts() {}
 
-  // Conditionally pick corresponding string type for a given string view
+  /// @brief Given a string_view or wstring_view, first build its
+  /// corresponding owning string type and then delegate accordingly
   template <typename SV, typename S = std::conditional_t<
                              std::is_same_v<SV, std::string_view>, std::string,
                              std::wstring>>
     requires(Core::IsOneOf<SV, std::string_view, std::wstring_view>)
   String(SV const &s, Color const color = Color::NONE,
-         Core::IsOneOf<Style> auto... stys)
+         Core::IsOneOf<Style> auto... stys) noexcept
       : String(S(s), color, stys...) {}
 
-  // For anything string or wstring convertible
+  /// @brief Given a string-convertible object, construct it into the
+  /// string type available and then delegate accordingly
   template <typename S1, typename S2 = std::conditional_t<
                              std::is_convertible_v<S1, std::string>,
                              std::string, std::wstring>>
@@ -192,7 +210,9 @@ public:
          Core::IsOneOf<Style> auto... stys)
       : String(S2(std::forward<S1>(s)), color, stys...){};
 
-  // Stream operator fallback for everything else
+  /// @brief For anything not covered by other ctors, if it defines
+  /// operator<<(std::stringstream) then build a string out of the
+  /// operator application's result and delegate accordingly
   template <typename S>
     requires((!std::is_convertible_v<S, std::string> &&
               !std::is_convertible_v<S, std::wstring>) &&
