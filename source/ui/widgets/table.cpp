@@ -140,6 +140,10 @@ void Table::rebuild_columns() noexcept {
   // Always force a remapping of cursor rows after rebuilds
   _table_row_ypos_map.clear();
 
+  // Always force a remapping of sep rows after rebuilds
+  _repop_sep_row_trans = true;
+  _sep_rows_trans.clear();
+
   _needs_rebuild = false;
 }
 
@@ -462,8 +466,27 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
       TRY_DROP(
           draw_row(drawing_border, col, plane, row, row_offset, empty_cell));
 
-      row_offset += (1 + sep_rows.contains(row_idx++));
+      const bool is_sep = sep_rows.contains(row_idx++);
+
+      if (_repop_sep_row_trans && is_sep) {
+
+        int col_x = 0;
+        int col_y = row_offset + 1;
+
+        // Translate this row's ypos from the column plane to the table's plane
+        ncplane_translate(plane.to_ncplane(), _plane->to_ncplane(), &col_y,
+                          &col_x);
+
+        App::AppContext::Log().debug(
+            "Translated sep. row {} to base plane row {}", row_idx - 1, col_y);
+
+        _sep_rows_trans.emplace_back(col_y);
+      }
+
+      row_offset += (1 + is_sep);
     }
+
+    _repop_sep_row_trans = false;
 
     if (drawing_cursor)
       to_redraw_cursor.emplace_back(idx);
@@ -503,7 +526,12 @@ void Table::redraw_border() noexcept {
 
   namespace BOXDRAW_SET = Tools::Draw::BOXDRAW_ROUND;
 
-  for (auto [col, plane] : std::ranges::zip_view{_table, _col_planes}) {
+  _plane->erase();
+
+  std::wstring sep_str = L"";
+
+  for (auto [col, plane, idx] :
+       std::ranges::zip_view{_table, _col_planes, std::views::iota(0u)}) {
     auto border_mask = ncpp::NCBox::CornerMask;
 
     border_mask |= (!col.props.draw_left_border * ncpp::NCBox::MaskLeft);
@@ -523,7 +551,31 @@ void Table::redraw_border() noexcept {
     }
 
     plane.perimeter_rounded(0, color, border_mask);
+
+    for (int const row : _sep_rows_trans) {
+      int y = row;
+      int x = 0;
+      ncplane_translate(_plane->to_ncplane(), plane.to_ncplane(), &y, &x);
+
+      // Erase the row
+      ncplane_erase_region(plane.to_ncplane(), y, 0, 1, 0);
+    }
+
+    // Add this column's left border divider char to the separator str
+    if (idx == 0)
+      sep_str += BOXDRAW_SET::T_R;
+    else if (idx == _table.size())
+      sep_str += BOXDRAW_SET::T_L;
+    else
+      sep_str +=
+          col.props.draw_left_border ? BOXDRAW_SET::CROSS : BOXDRAW_SET::HORI;
+
+    // Add horizontal chars to the width of this column to the separator str
+    sep_str += std::wstring(col.max_width, BOXDRAW_SET::HORI);
   }
+
+  // Add the final border divider char to the separator str
+  sep_str += BOXDRAW_SET::T_L;
 
   auto &leftmost = _col_planes.front();
   leftmost.putwch(0, 0, BOXDRAW_SET::UL);
@@ -533,6 +585,12 @@ void Table::redraw_border() noexcept {
   auto xpos = rightmost.get_dim_x() - 1;
   rightmost.putwch(0, xpos, BOXDRAW_SET::UR);
   rightmost.putwch(rightmost.get_dim_y() - 1, xpos, BOXDRAW_SET::LR);
+
+  size_t left_pad = padding_left + 1;
+
+  for (size_t const row : _sep_rows_trans) {
+    _plane->putstr(row, left_pad, sep_str.c_str());
+  }
 }
 
 std::expected<void, WidgetErr> Table::set_at(size_t const row, size_t const col,

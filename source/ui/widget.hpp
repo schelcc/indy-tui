@@ -169,6 +169,11 @@ private:
   /// table row position retrieves that row's drawn position.
   std::vector<size_t> _table_row_ypos_map{};
 
+  /// @brief Y positions of rows at which to draw separators, along with a
+  /// boolean to track whether to repopulate this mapping.
+  std::vector<int> _sep_rows_trans{};
+  bool _repop_sep_row_trans = true;
+
   /// @brief Track the position of the cursor at the time of the last
   /// draw. Only set by redraw_cursor().
   size_t _last_cursor_pos = 0;

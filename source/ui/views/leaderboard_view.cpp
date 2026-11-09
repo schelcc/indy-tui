@@ -38,6 +38,7 @@ LeaderboardView::LeaderboardView() : table_info() {
     t->table.padding_left = 1;
 
     *t->table.cursor_skip_rows.get_mut() = {0};
+    *t->table.separator_rows.get_mut() = {0, 10};
   }
 
   using namespace Input;
