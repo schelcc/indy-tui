@@ -31,6 +31,10 @@ static inline std::string Rank(Telemetry::DriverTelemetry const &d) {
   return std::format("{}", d.get_rank());
 }
 
+static inline UI::String EmptyColumn(Telemetry::DriverTelemetry const &) {
+  return "";
+}
+
 template <Telemetry::SessionType PickSession = Telemetry::SessionType::RACE>
 static inline UI::String PitStatus(Telemetry::DriverTelemetry const &d) {
   if constexpr (PickSession == Telemetry::SessionType::RACE)
