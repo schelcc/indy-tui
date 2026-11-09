@@ -1,0 +1,77 @@
+#pragma once
+
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include <type_traits>
+#include <variant>
+
+#include "core.hpp"
+
+namespace ThreadSafe {
+
+template <typename T, typename Mut = std::shared_mutex>
+  requires(!std::is_reference_v<T>)
+struct LockPair {
+private:
+  std::variant<std::shared_lock<Mut>, std::unique_lock<Mut>> lock;
+  std::reference_wrapper<T> val;
+
+public:
+  template <typename S = std::remove_cv_t<T>>
+  LockPair(Core::IsOneOf<std::shared_lock<Mut>, std::unique_lock<Mut>> auto &&l,
+           S &&s)
+      : lock(std::move(l)), val(std::reference_wrapper<T>(std::forward<S>(s))) {
+  }
+
+  // Return a (possibly const) pointer to T
+  T *operator->() { return &(val.get()); }
+
+  // Return a (possibly const) ref to T
+  T &operator*() { return val.get(); }
+};
+
+// Don't permit pointer types because pointer semantics don't really make sense
+// here
+template <typename T>
+  requires(!std::is_pointer_v<T>)
+class Locked {
+  mutable std::shared_mutex _mtx;
+  T _val;
+
+public:
+  // Permit a default ctor only if T has one
+  Locked()
+    requires(std::is_default_constructible_v<T>)
+      : _val() {}
+
+  template <typename U = std::remove_cv_t<T>>
+  Locked(U &&u) : _val(std::forward<U>(u)) {};
+
+  LockPair<T> get_mut() { return {std::unique_lock(_mtx), _val}; }
+  LockPair<T> get_mut() const = delete;
+
+  LockPair<T const> get_const() const { return {std::shared_lock(_mtx), _val}; }
+};
+
+template <typename T> class Locked<std::shared_ptr<T>> {
+  Locked() = delete;
+
+  template <typename U = std::remove_cv_t<T>> Locked(U &&u) = delete;
+
+  LockPair<T> get_mut() = delete;
+  LockPair<T> get_mut() const = delete;
+  LockPair<T const> get_const() const = delete;
+};
+
+template <typename T> class Locked<std::unique_ptr<T>> {
+  Locked() = delete;
+
+  template <typename U = std::remove_cv_t<T>> Locked(U &&u) = delete;
+
+  LockPair<T> get_mut() = delete;
+  LockPair<T> get_mut() const = delete;
+  LockPair<T const> get_const() const = delete;
+};
+
+}; // namespace ThreadSafe

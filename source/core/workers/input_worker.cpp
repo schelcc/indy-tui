@@ -1,5 +1,4 @@
-#include <atomic>
-#include <vector>
+#include <mutex>
 
 #include <ncpp/NotCurses.hh>
 
@@ -7,8 +6,6 @@
 #include "core/workers.hpp"
 
 #include "core/app_context.hpp"
-#include "core/core.hpp"
-#include "core/session.hpp"
 
 enum AllowedModifier {
   NONE,
@@ -51,7 +48,25 @@ bool key_char_is(const wchar_t key, const ncinput *ni, const Ts... mods) {
 namespace Workers {
 
 void KeyWorker::operator()(std::stop_token stop_tok) {
-  Tools::Log::Debug("Started key worker", "WORKER-INPUT");
+  App::AppContext::Log().debug("Started key worker");
+
+  nc.linesigs_disable();
+
+  using Input::KeyWithMod;
+  using Input::Modifier;
+
+  while (!stop_tok.stop_requested()) {
+    std::unique_lock<std::mutex> lock(key_queue_mtx);
+    if (!key_cond.wait(lock, stop_tok, [this] { return !key_queue.empty(); }))
+      return;
+
+    root_callback(key_queue.front());
+    key_queue.pop();
+  }
+}
+
+void TestKeyWorker::operator()(std::stop_token stop_tok) {
+  App::AppContext::Log().debug("Started test-key worker");
 
   nc.linesigs_disable();
 
@@ -59,29 +74,6 @@ void KeyWorker::operator()(std::stop_token stop_tok) {
   using Input::Modifier;
 
   Input::InputHandler handler{};
-
-  handler
-      .register_callback(
-          KeyWithMod('=', Modifier::SHIFT), "Increase the delay by 1s",
-          [this]() {
-            Tools::Log::Debug("Increase delay requested", "WORKER-INPUT");
-            sess.set_delay_sec(++delay);
-          })
-      .register_callback(
-          KeyWithMod('-', Modifier::NONE),
-          "Decrease the delay by 1s, only if the delay is positive",
-          [this]() {
-            Tools::Log::Debug("Decrease delay requested", "WORKER-INPUT");
-            sess.set_delay_sec(delay == 0 ? 0 : --delay);
-          })
-      .register_callback(KeyWithMod('q', Modifier::NONE),
-                         "Exit the application",
-                         []() {
-                           Tools::Log::Debug("Quit requested", "WORKER-INPUT");
-                           App::AppContext::Shutdown("Quit requested by user");
-                         })
-      .duplicate_callback(KeyWithMod('q', Modifier::NONE),
-                          KeyWithMod('C', Modifier::CTRL));
 
   while (!stop_tok.stop_requested()) {
     ncinput in{};

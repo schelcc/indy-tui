@@ -1,85 +1,90 @@
 #pragma once
 
 #include <cassert>
-#include <cmath>
-#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <vector>
 
 #include <ncpp/Plane.hh>
 
-namespace UI {
-enum class Focus { ACTIVE, INACTIVE };
-};
+#include "core/input.hpp"
+
+#include "tools/locked.hpp"
+
+#include "ui/types.hpp"
+#include "ui/views.hpp"
 
 namespace Layout {
 
 enum Direction { HORIZONTAL, VERTICAL };
 
-using Segments = size_t;
+using Segments = uint;
 
-/** @brief Plane construction wrapper to build a directional layout.
- * Modification of underlying planes incurred internally is thread-safe, but
- * regular usage of the constructed planes fall under the same rules as standard
- * notcurses (single-plane action is largely fine concurrenlty, but multi-plane
- * action like reordering is not). */
-template <Direction DIRECTION, Segments TOT_SEGMENTS> struct Container {
+struct Block;
 
-  // For holding onto segment count for later resizing
-  struct Block {
-    Segments segments;
-    std::shared_ptr<ncpp::Plane> plane;
+/** @brief Represents a horizontal or vertical collection of Blocks. */
+struct BlockList {
+  mutable std::mutex m;
 
-    Block(Segments s, std::shared_ptr<ncpp::Plane> p)
-        : segments(s), plane(p) {};
-  };
+  std::vector<Block> elements;
+  Input::InputHandler input_handler;
 
-  std::mutex mtx{};
+  // This is fine unless we are changing the vec during usage
+  ThreadSafe::Locked<std::vector<Block>::iterator> focused_elem_it;
 
-  std::shared_ptr<ncpp::Plane> base_plane{};
+  /// @brief Direction of elements in the BlockList's layout
+  Direction direction;
 
-  std::vector<Block> layout_rows{};
+  /// @brief The BlockList's parent plane with which the layout is calculated
+  std::shared_ptr<ncpp::Plane> parent;
 
-  Segments segments_used{0};
+  /** @brief Solve/re-solve the layout. If a plane pointer is provided it is
+   * used as the new parent plane. */
+  std::expected<void, UI::RenderErr>
+      solve(std::shared_ptr<ncpp::Plane> = nullptr);
 
-  size_t yoff{0};
-  size_t xoff{0};
+  /** @brief Render this plane with the given render level and is-focused
+   * status. */
+  std::expected<void, UI::RenderErr> render(UI::RenderLevel const,
+                                            UI::FocusState const);
 
-  std::shared_ptr<ncpp::Plane> add_block(Segments const segments) {
-    std::scoped_lock lock(mtx);
-    assert(segments_used + segments <= TOT_SEGMENTS);
-    segments_used += segments;
+  /** @brief Handle the given input. If the BlockList does not have an action
+   * for the provided input, it is forwarded to the currently focused element.
+   * Returns bool denoting whether the input was eventually acted upon. */
+  bool take_input(Input::KeyWithMod const &);
 
-    size_t dim = 0;
-    size_t target_dim = 0;
+  /** @brief Advance the layout's focused element in the provided direction,
+   * wrapping around the layout's ends. */
+  void cycle_focus(UI::FocusDirection const);
 
-    if constexpr (DIRECTION == VERTICAL) {
-      target_dim = base_plane->get_dim_y();
-    } else {
-      target_dim = base_plane->get_dim_x();
-    }
+  BlockList(Direction, std::vector<Block> &&);
 
-    dim = (target_dim * segments) / TOT_SEGMENTS;
+  BlockList(BlockList &&) noexcept;
+  BlockList &operator=(BlockList &&) noexcept;
 
-    if constexpr (DIRECTION == VERTICAL) {
-      layout_rows.emplace_back(
-          segments,
-          std::make_shared<ncpp::Plane>(base_plane.get(), dim,
-                                        base_plane->get_dim_x(), yoff, xoff));
-      yoff += dim;
-    } else {
-      layout_rows.emplace_back(
-          segments, std::make_shared<ncpp::Plane>(base_plane.get(),
-                                                  base_plane->get_dim_y(), dim,
-                                                  yoff, xoff));
-      xoff += dim;
-    }
+private:
+  /** @brief Set up the BlockList's input handler. Required as the input_handler
+   * cannot be moved and must be rebuilt after any ctor. */
+  void init_handler();
+};
 
-    return layout_rows.back().plane;
-  }
+/** @brief Represents a single section of a BlockList. Holds either a View or
+ * another BlockList, allowing nested layouts. */
+struct Block {
+  std::variant<std::shared_ptr<UI::Views::View>, BlockList> element;
+  Segments segments;
 
-  Container(std::shared_ptr<ncpp::Plane> base) : base_plane(base) {};
+  // (actually) TODO - Not all Blocks should be dynamically
+  // resizing. There should be a way to note a box which should have
+  // some set of fixed row/col sizes. For example, the event info
+  // might say it can be 4 rows if there's enough space, otherwise 1
+  // row. In that case the renderee will need to have some block state
+  // information...
+
+  std::shared_ptr<ncpp::Plane> plane = nullptr;
+
+  Block(Segments const, std::shared_ptr<UI::Views::View>);
+  Block(Segments const, BlockList &&);
 };
 
 }; // namespace Layout

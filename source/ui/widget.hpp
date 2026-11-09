@@ -1,0 +1,411 @@
+#pragma once
+
+#include <atomic>
+#include <cstddef>
+#include <execution>
+#include <expected>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <ranges>
+#include <shared_mutex>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include <ncpp/Plane.hh>
+
+#include "core/core.hpp"
+#include "core/input.hpp"
+
+#include "tools/locked.hpp"
+
+#include "types.hpp"
+#include "ui/string.hpp"
+
+namespace UI {
+
+struct WidgetErr {
+  enum Kind {
+    OUT_OF_RANGE,
+    ACTION_DISABLED,
+  } kind;
+
+  std::optional<std::string> msg = {};
+
+  // Implicit conversion from a WidgetErr to std::unexpected(WidgetErr) for ease
+  // of use
+  template <typename S> operator std::expected<S, WidgetErr>() {
+    return std::unexpected(*this);
+  }
+
+  WidgetErr(Kind k) : kind(k) {}
+  WidgetErr(Kind k, std::string_view m) : kind(k), msg(m) {}
+};
+
+template <typename V>
+concept WidgetLike = requires(V v, Input::KeyWithMod &k) {
+  // Must take in input, return bool denoting whether it used
+  // the input
+  { v.take_input(k) } -> std::same_as<bool>;
+};
+
+// Widgets
+struct Text {
+private:
+  std::shared_mutex _mtx;
+
+  /// @brief Text to be rendered.
+  UI::String text{};
+
+public:
+  /// @brief Alignment of text when rendered, defaults to left
+  std::atomic<Align> align = Align::LEFT;
+
+  // TODO - Line wrapping and padding behavior
+  /// @brief How far from the area's left edge should be left untouched,
+  /// defaults 0
+  std::atomic_uint16_t padding_left = 0;
+
+  /// @brief How far from the area's top edge should be top untouched, defaults
+  /// 0
+  std::atomic_uint16_t padding_top = 0;
+
+  /// @brief How far from the area's right edge should be right untouched,
+  /// defaults 0
+  std::atomic_uint16_t padding_right = 0;
+
+  /// @brief How far from the area's bottom edge should be bottom untouched,
+  /// defaults 0
+  std::atomic_uint16_t padding_bottom = 0;
+
+  bool take_input(Input::KeyWithMod &);
+
+  /** @brief Append the given text to the existing text. */
+  void append(UI::String &&) noexcept;
+
+  /** @brief Replace all existing text with the given text. */
+  void update(UI::String &&) noexcept;
+
+  /** @brief Clear the existing text. */
+  void clear() noexcept;
+
+  /** @brief Apply the existing text onto the given plane. Does not synchronize
+   * plane access. */
+  void apply(ncpp::Plane *const) noexcept;
+};
+
+/** @brief Interface widget for table-based information displays. */
+struct Table {
+public:
+  /** @brief Dataclass to store table's dimensions. */
+  struct Dim {
+    size_t rows;
+    size_t cols;
+
+    bool operator==(Dim const &o) const {
+      return (o.rows == rows) && (o.cols == cols);
+    }
+  };
+
+  /** @brief Dataclass to store column-based formatting properties. */
+  struct Column {
+    std::vector<std::optional<UI::String>> rows;
+    size_t max_width = 1;
+
+    /// @brief The x coordinate for this column in the table's plane
+    size_t start_x = 0;
+
+    /// @brief Whether this column needs to be re-drawn. For now, if
+    /// column is written to at all, regardless of which rows might
+    /// have changed.
+    bool damaged = true;
+
+    struct Props {
+      Align align = Align::LEFT;
+      bool draw_left_border = true;
+    } props{};
+
+    /** @brief Recalculate this column's max_width. Returns bool indicating
+     * whether the max width value changed. */
+    bool recalculate_width(UI::String const &);
+    bool recalculate_width(size_t const);
+
+    /** @brief Construct a column with the provided number of rows. */
+    Column(size_t const num_rows) : rows(num_rows, std::nullopt) {}
+  };
+
+private:
+  mutable std::shared_mutex _mtx;
+
+  // Columns of rows
+  std::vector<Column> _table{};
+  std::vector<ncpp::Plane> _col_planes{};
+
+  /// @brief Tracks whether a rebuild of the table's column planes is
+  /// required. Set true whenever a call to
+  /// Column::recalculate_width() results in a changed max_width. If
+  /// column rebuild become frequent and costly, could later track the
+  /// first "damaged" column to start at, but not sure it's necessary.
+  bool _needs_rebuild = true;
+
+  // Coooooould use std::any here and require caller to provide the type when
+  // resolving backing keys, but seems like overkill
+
+  /// @brief Keys to associate with rows that are never shown upon
+  /// render, are only used to provide the user a way to associate row
+  /// content. Kept at the same dimensions as the table's rows unless
+  /// `no_backing_keys` is true.
+  std::vector<std::string> _backing_keys{};
+
+  /// @brief We'll hold around a plane and handle its life
+  /// ourselves. It should not reparent or change z level, as that is
+  /// not thread safe.
+  ncpp::Plane *_plane = nullptr;
+
+  /// @brief Mapping of table row index to y-coordinate. Indexing at a
+  /// table row position retrieves that row's drawn position.
+  std::vector<size_t> _table_row_ypos_map{};
+
+  /// @brief Y positions of rows at which to draw separators, along with a
+  /// boolean to track whether to repopulate this mapping.
+  std::vector<int> _sep_rows_trans{};
+  bool _repop_sep_row_trans = true;
+
+  /// @brief Track the position of the cursor at the time of the last
+  /// draw. Only set by redraw_cursor().
+  size_t _last_cursor_pos = 0;
+
+  /// @brief Track whether the cursor was drawn at the time of the
+  /// last draw. Set by apply(), used by redraw_border.
+  bool _last_draw_cursor = false;
+
+  /// @brief Range of column indices, held around to avoid repetitive
+  /// construction if needed
+  std::vector<size_t> _col_range{};
+
+  /// @brief The table's cursor. Only used if draw_cursor is set.
+  std::atomic_size_t _cursor_pos = 0;
+
+  /** @brief Update the base plane to the given plane. Does not synchronize
+   * access, as should only be called when a lock is already acquired. */
+  void update_baseplane(ncpp::Plane *const p) noexcept;
+
+  /** @brief Rebuild the table's column planes, starting at the first column.
+   * Does not synchronize access. */
+  void rebuild_columns() noexcept;
+
+  /** @brief Draw/redraw the table's border. Does not check if border
+   * should be drawn, so only call after first checking. Does not
+   * synchronize access. */
+  void redraw_border() noexcept;
+
+  /** @brief Draw/redraw the cursor for every given column. Does not
+   * check if cursor should be drawn, so only call affter first
+   * checking. Does not synchronize access. */
+  std::expected<void, UI::RenderErr>
+  redraw_cursor(size_t const, std::vector<size_t> const &, bool const,
+                bool const, std::unordered_set<size_t> &&) noexcept;
+
+public:
+  // Properties
+
+  /// @brief Spacing between columns, defaults to 1
+  std::atomic_uint8_t column_sep = 1;
+
+  /// @brief Spacing between rows, defaults to 0
+  std::atomic_uint8_t row_sep = 1;
+
+  /// @brief Space above the first row rendered. Defaults 0.
+  std::atomic_size_t padding_top = 0;
+
+  /// @brief Space to the left of the first column rendered. Defaults 0.
+  std::atomic_size_t padding_left = 0;
+
+  /// @brief Empty cell representation, defaults to "--"
+  UI::String empty_cell = "--";
+
+  /// @brief Rows for the cursor to skip. Defaults empty, only used if
+  /// draw_cursor is set.
+  ThreadSafe::Locked<std::unordered_set<size_t>> cursor_skip_rows{};
+
+  /// @brief Row indices after which to draw separators, if drawing border. Only
+  /// used if draw_border is set. Separator rows are unavailable to the cursor,
+  /// and should not be added to the cursor's skip rows.
+  ThreadSafe::Locked<std::unordered_set<size_t>> separator_rows{};
+
+  /// @brief Whether to disable backing keys. To attempt to retrieve
+  /// backing keys when this is set is an error.
+  std::atomic_flag no_backing_keys = true;
+
+  /// @brief Whether to render the table's cursor.
+  std::atomic_flag draw_cursor = false;
+
+  /// @brief Whether to draw the table's border.
+  std::atomic_flag draw_border = false;
+
+  /// @brief The table's current dimensions. Should not be modified externally.
+  /// Just don't do it please.
+  ThreadSafe::Locked<Dim> dim;
+
+  /// @brief Name to identify the plane in debugging.
+  std::string const name = "(no name)";
+
+  // Methods
+  /** @brief Try to handle the given input, returning true if the
+   * input was used. */
+  bool take_input(Input::KeyWithMod &);
+
+  /** @brief Move the table's cursor one row in the given direction,
+   * skipping any rows indicated by `cursor_skip_rows`. Does nothing
+   * if `draw_cursor` is not set. Returns new cursor position. */
+  size_t move_cursor(UI::CursorDirection const) noexcept;
+
+  /** @brief Get the backing key under the table's cursor. Requires both backing
+   * keys and cursor to be enabled. Returns empty string if either is disabled.
+   */
+  std::string cursor_backing_key() const noexcept;
+
+  /** @brief Set the table's dimensions. Fully clears the table. */
+  void set_dim(Dim const &) noexcept;
+
+  /** @brief Access a column's properties. Throws if column is not
+   * within range. */
+  ThreadSafe::LockPair<Column::Props> column_props(size_t const);
+
+  /** @brief Retrieve the backing key associated with the given row. Requires
+   * `no_backing_keys` not be set. */
+  std::expected<std::string, WidgetErr>
+  get_backing_key(size_t const) const noexcept;
+
+  /** @brief Retrieve a collection of row indices associated with the given
+   * keys. If no keys match, returns empty vector. Requires `no_backing_keys`
+   * not be set. */
+  std::expected<std::vector<size_t>, WidgetErr>
+  batch_key_lookup(std::unordered_set<std::string> const &) const noexcept;
+
+  /** @brief Get the row index associated with the given backing key,
+   * if one exists. Returns WidgetErr::OUT_OF_RANGE if no such key
+   * exists in the table. Requires `no_backing_keys` not be set. */
+  std::expected<size_t, WidgetErr>
+  get_backing_key_row(std::string_view const) const noexcept;
+
+  /** @brief Set the backing key associated with the given row. Requires
+   * `no_backing_keys` not be set. */
+  std::expected<void, WidgetErr>
+  set_backing_key(size_t const, std::string_view const) noexcept;
+
+  /** @brief Set the backing keys for the full table, optionally providing an
+   * offset to place the start of the new keys. Requires `no_backing_keys` not
+   * be set. */
+  std::expected<void, WidgetErr> set_backing_keys(std::vector<std::string> &&,
+                                                  size_t const = 0) noexcept;
+
+  /** @brief Force the next render to render all columns. */
+  void damage_all() noexcept;
+
+  /** @brief Apply this view to a plane. Does not synchronize plane access. */
+  std::expected<void, UI::RenderErr> apply(ncpp::Plane *const) noexcept;
+
+  /** @brief Set the string at the specified row and column to the given value.
+   * Cell must be within the table's current dimensions. Returns expected
+   * containing void if successful, otherwise the error which occured. */
+  std::expected<void, WidgetErr> set_at(size_t const, size_t const,
+                                        UI::String &&) noexcept;
+
+  /** @brief Starting at the zeroth column in the given row,
+   * sequentially update the row's cells with the given values. All
+   * cells must fit within the table's current dimensions.  Returns
+   * expected containing void if successful, otherwise the error which
+   * occured. */
+  std::expected<void, WidgetErr>
+  update_row(size_t const, std::vector<std::optional<UI::String>> &&) noexcept;
+
+  /** @brief Starting at the specified column in the given row,
+   * sequentially update the row's cells with the given values. All
+   * cells must fit within the table's current dimensions.  Returns
+   * expected containing void if successful, otherwise the error which
+   * occured. */
+  std::expected<void, WidgetErr>
+  update_row(size_t const, size_t const,
+             std::vector<std::optional<UI::String>> &&) noexcept;
+
+  /** @brief Starting at the zeroth row in the given column,
+   * sequentially update the column's cells with the given values. All
+   * cells must fit within the table's current dimensions.  Returns
+   * expected containing void if successful, otherwise the error which
+   * occured. */
+  std::expected<void, WidgetErr>
+  update_col(size_t const, std::vector<std::optional<UI::String>> &&) noexcept;
+
+  /** @brief Starting at the specified row in the given column,
+   * sequentially update the column's cells with the given values. All
+   * cells must fit within the table's current dimensions.  Returns
+   * expected containing void if successful, otherwise the error which
+   * occured. */
+  std::expected<void, WidgetErr>
+  update_col(size_t const, size_t const,
+             std::vector<std::optional<UI::String>> &&) noexcept;
+
+  /** @brief Swap the specified column with the given new column. All cells must
+   * fit within table's current dimensions. Returns expected containing void if
+   * successful, otherwise the error which occured. Beyond the vector lengths
+   * matching, the caller should assume an otherwise unspecified state for the
+   * swapped vector regardless of returned state. */
+  std::expected<void, WidgetErr>
+  swp_update_col(size_t const,
+                 std::vector<std::optional<UI::String>> &) noexcept;
+
+  /** @brief Set the specified cell to empty. */
+  std::expected<void, WidgetErr> clear_at(size_t const, size_t const) noexcept;
+
+  /** @brief Set all cells to empty. Maintains current dimensions. */
+  void clear() noexcept;
+
+  Table() = default;
+  Table(std::string &&s) : name(std::move(s)) {}
+};
+
+template <typename... Ts>
+  requires(WidgetLike<Ts> && ...)
+struct _Widget : std::variant<Ts...> {
+  using std::variant<Ts...>::variant;
+  using std::variant<Ts...>::operator=;
+
+  std::optional<std::function<void(ncpp::Plane *const)>> render_callback =
+      std::nullopt;
+
+  template <typename T, typename Self>
+    requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
+  auto &&as(this Self &&self) {
+    return std::get<T>(std::forward<Self>(self));
+  }
+
+  template <typename T>
+    requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
+  bool is() {
+    return std::holds_alternative<T>(*this);
+  }
+
+  template <typename T>
+    requires(Core::IsOneOf_ignore_cvref<T, Ts...>)
+  _Widget(T &&t) : std::variant<Ts...>::variant(std::forward<T>(t)) {}
+
+  template <Core::IsOneOf<Ts...> T, typename... Args>
+  static std::shared_ptr<_Widget> MakeWidget(Args &&...args) {
+    return std::make_shared<_Widget>(std::in_place_type<T>,
+                                     std::forward<Args>(args)...);
+  }
+
+  template <typename F>
+    requires(std::is_invocable_r_v<void, F, ncpp::Plane *const>)
+  void set_render_callback(F &&f) {
+    render_callback = [f = std::move(f)](ncpp::Plane *const p) { f(p); };
+  }
+};
+
+using Widget = _Widget<Text, Table>;
+
+}; // namespace UI

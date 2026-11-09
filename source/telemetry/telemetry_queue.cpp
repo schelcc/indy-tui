@@ -1,13 +1,12 @@
-#include "telemetry/telemetry_queue.hpp"
-#include "base64.hpp"
-#include "logger.hpp"
-#include "telemetry/telemetry_frame.hpp"
-#include "time.hpp"
-#include <csignal>
 #include <cstddef>
 
-using Tools::LoggedSharedLock;
-using Tools::LoggedUniqueLock;
+#include "core/app_context.hpp"
+#include "core/time.hpp"
+
+#include "telemetry/telemetry_frame.hpp"
+#include "telemetry/telemetry_queue.hpp"
+
+#include "tools/base64.hpp"
 
 using Time::Clock;
 using namespace Time::Duration;
@@ -35,16 +34,17 @@ TelemetryQueue::set_refresh_hz(size_t const refresh_hz) noexcept {
 }
 
 [[nodiscard]] std::expected<size_t, TelemetryQueue::Err>
-TelemetryQueue::get_delay_sec() noexcept {
+TelemetryQueue::get_delay_sec() const noexcept {
   return _delay_info.get_delay_s();
 }
 
 [[nodiscard]] std::expected<size_t, TelemetryQueue::Err>
-TelemetryQueue::get_refresh_hz() noexcept {
+TelemetryQueue::get_refresh_hz() const noexcept {
   return _delay_info.get_refresh_hz();
 }
 
-[[nodiscard]] DblMilliSec TelemetryQueue::get_accrued_delay_ms() noexcept {
+[[nodiscard]] DblMilliSec
+TelemetryQueue::get_accrued_delay_ms() const noexcept {
   assert(_deq_idx <= _enq_idx);
 
   return static_cast<double>(_enq_idx - _deq_idx) *
@@ -52,7 +52,7 @@ TelemetryQueue::get_refresh_hz() noexcept {
              Time::Duration::DblMilliSec(0));
 }
 
-[[nodiscard]] size_t TelemetryQueue::get_total_frames() noexcept {
+[[nodiscard]] size_t TelemetryQueue::get_total_frames() const noexcept {
   return _delay_info.get_delay_frames().value_or(0);
 }
 
@@ -113,7 +113,7 @@ TelemetryQueue::enqueue(std::string_view const payload) noexcept {
                ? std::expected<void, TelemetryQueue::Err>{}
                : std::unexpected(Err{Err::FRAME_INVALID});
   } else {
-    Tools::Log::Debug("Enqueue skipped, delay is full", "TELEM-QUEUE");
+    App::AppContext::Log().trace("Enqueue skipped, delay full");
     return std::unexpected(Err{Err::DELAY_FULL});
   }
 }
@@ -137,7 +137,7 @@ TelemetryQueue::dequeue() noexcept {
 
     return std::move(cur_frame.frame);
   } else {
-    Tools::Log::Debug("Dequeue skipped, delay is not ready", "TELEM-QUEUE");
+    App::AppContext::Log().trace("Dequeue skipped, delay full");
     return std::unexpected(Err{Err::TOO_RECENT});
   }
 }

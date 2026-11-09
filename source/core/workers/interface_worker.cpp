@@ -1,89 +1,327 @@
+#include <condition_variable>
 #include <memory>
+#include <ncpp/NCKey.hh>
+#include <notcurses/nckeys.h>
+#include <notcurses/notcurses.h>
+#include <pthread.h>
+#include <stop_token>
 
-#include "columns.hpp"
+#include "core/app_context.hpp"
+#include "core/columns.hpp"
+#include "core/input.hpp"
+#include "core/session.hpp"
+#include "core/time.hpp"
 #include "core/workers.hpp"
 
-#include "core/time.hpp"
-#include "draw.hpp"
-#include "tools/logger.hpp"
+#include "telemetry/telemetry_board.hpp"
+#include "telemetry/telemetry_queue.hpp"
+
 #include "ui/layout.hpp"
+#include "ui/types.hpp"
+#include "ui/views.hpp"
+#include "ui/widget.hpp"
+
+#include <valgrind/callgrind.h>
+
+using Telemetry::SessionType;
 
 namespace Workers {
 
+// Helper to construct the vector to pass into BlockList
+std::vector<Layout::Block> make_row(auto &&...blocks) {
+  std::vector<Layout::Block> output{};
+  output.reserve(sizeof...(blocks));
+  (output.emplace_back(std::move(blocks)), ...);
+  return output;
+}
+
 void InterfaceWorker::operator()(std::stop_token stop_tok) {
-  Tools::Log::Debug("Leaderboard worker instantiated", "LEADERBOARD");
+  App::AppContext::Log().debug("Started leaderboard worker");
+
+  // plane drawing calls take shared lock, nc.render() call takes unique
+  struct TurnBasedMutex {
+    std::shared_lock<std::shared_mutex> lock_shared() {
+      permission_mtx.lock_shared();
+      std::shared_lock lock(action_mtx);
+      permission_mtx.unlock_shared();
+      return lock;
+    }
+
+    std::unique_lock<std::shared_mutex> lock_unique() {
+      permission_mtx.lock();
+      std::unique_lock lock(action_mtx);
+      permission_mtx.unlock();
+      return lock;
+    }
+
+  private:
+    std::shared_mutex permission_mtx;
+    std::shared_mutex action_mtx;
+  } render_mtx;
 
   std::shared_ptr<ncpp::Plane> std_plane(nc.get_stdplane());
 
-  Time::TimePoint last_tick;
-
   Telemetry::TelemetryBoard board{};
 
-  last_tick = Time::Clock::now();
+  std::shared_ptr<UI::Views::View> sess_status_view;
+  std::shared_ptr<UI::Views::View> event_status_view;
+  std::shared_ptr<UI::Views::View> leaderboard_view;
+
+  // Create and configure views
+  {
+    sess_status_view =
+        UI::Views::View::MakeView<UI::Views::SessionStatusView>();
+
+    sess_status_view->set_render_callback(
+        [this](UI::RenderLevel render_level, ncpp::Plane *const p,
+               UI::FocusState const focused,
+               UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
+          auto &v = view.as<UI::Views::SessionStatusView>();
+
+          return (render_level == UI::RenderLevel::FULL)
+                     ? v.update_and_render(sess, focused, p)
+                     : v.update_and_render(focused, p);
+        });
+
+    event_status_view =
+        UI::Views::View::MakeView<UI::Views::TrackSessionView>();
+
+    event_status_view->set_render_callback(
+        [&board](UI::RenderLevel render_level, ncpp::Plane *const p,
+                 UI::FocusState const focused,
+                 UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
+          auto &v = view.as<UI::Views::TrackSessionView>();
+
+          return (render_level == UI::RenderLevel::FULL)
+                     ? v.update_and_render(board.session_info, focused, p)
+                     : v.update_and_render(focused, p);
+        });
+
+    leaderboard_view = UI::Views::View::MakeView<UI::Views::LeaderboardView>();
+
+    leaderboard_view->set_render_callback(
+        [&board](UI::RenderLevel render_level, ncpp::Plane *const p,
+                 UI::FocusState const focused,
+                 UI::Views::View &view) -> std::expected<void, UI::RenderErr> {
+          auto &v = view.as<UI::Views::LeaderboardView>();
+
+          return (render_level == UI::RenderLevel::FULL)
+                     ? v.update_and_render(board.reorder_and_get(), focused, p)
+                     : v.update_and_render(focused, p);
+        });
+
+    using ColumnInfo = UI::Views::LeaderboardView::ColumnInfo;
+    std::vector<ColumnInfo> cols{};
+
+    using namespace Columns;
+    // clang-format off
+    leaderboard_view->as<UI::Views::LeaderboardView>().set_columns({
+        ColumnInfo(Rank, "Pos.")
+	    .set_align(UI::Align::RIGHT),
+	ColumnInfo(PitStatus<SessionType::PRACTICE>, "Pit Status")
+	    .set_align(UI::Align::RIGHT)
+	    .disable_name_draw(),
+	ColumnInfo(DriverName<SessionType::PRACTICE>, "Name")
+	    .disable_left_border(),
+	ColumnInfo(Starred, "Starred")
+	    .disable_left_border()
+	    .disable_name_draw(),
+	ColumnInfo(Interval, "Interval"),
+	ColumnInfo(Gap, "Gap"),
+	ColumnInfo(Throttle, "Throttle"),
+	ColumnInfo(Brake, "Brake"),
+	ColumnInfo(LapsSincePit, "Since Pit"),
+	ColumnInfo(Speed, "Speed"),
+	ColumnInfo(LapDist, "Lap Distance")});
+    // clang-format on
+  }
 
   // Build main layout
   using namespace Layout;
-  Container<Direction::VERTICAL, Segments(13)> main_container(std_plane);
 
-  auto header_plane = main_container.add_block(Segments(4));
-  auto board_plane = main_container.add_block(Segments(8));
-  auto footer_plane = main_container.add_block(Segments(1));
+  auto info_row = BlockList(HORIZONTAL, make_row(Block(2, event_status_view),
+                                                 Block(1, sess_status_view)));
 
-  // Build header layout
-  Container<Direction::HORIZONTAL, Segments(3)> header_container(header_plane);
+  BlockList root_layout(VERTICAL, make_row(Block(1, std::move(info_row)),
+                                           Block(4, leaderboard_view)));
 
-  auto header_info_plane = header_container.add_block(Segments(2));
-  auto perf_info_plane = header_container.add_block(Segments(1));
+  auto res = root_layout.solve(std_plane);
+  if (!res.has_value()) {
+    App::AppContext::Log().error("Error solving initial root layout: {}",
+                                 res.error().what());
 
-  Container<Direction::VERTICAL, Segments(3)> header_info_container(
-      header_info_plane);
+    App::AppContext::Shutdown("Failed to solve initial root layout: " +
+                              res.error().what());
+    return;
+  }
 
-  auto telem_status_plane = header_info_container.add_block(Segments(1));
-  auto event_info_plane = header_info_container.add_block(Segments(2));
+  std::jthread render_thread =
+      std::jthread{[&render_mtx, std_plane](std::stop_token stop_tok) {
+        while (!stop_tok.stop_requested()) {
+          std::this_thread::sleep_for(Time::Duration::UIntMilliSec(50));
+          {
+            auto lock = render_mtx.lock_unique();
+            ncpile_render(std_plane->to_ncplane());
+          }
+          // {
+          //   auto lock = render_mtx.lock_shared();
+          ncpile_rasterize(std_plane->to_ncplane());
+          // }
+        }
+      }};
 
-  assert(board.add_column(board_plane, Columns::Rank{}));
-  assert(board.add_column(board_plane, Columns::DriverName{}));
-  assert(board.add_column(board_plane, Columns::Speed{}));
-  assert(board.add_column(board_plane, Columns::Throttle{}));
-  assert(board.add_column(board_plane, Columns::Brake{}));
-  assert(board.add_column(board_plane, Columns::LastTimingLine{}));
-  assert(board.add_column(board_plane, Columns::Gap{}));
-  assert(board.add_column(board_plane, Columns::Interval{}));
-  assert(board.add_column(board_plane, Columns::LapsSincePit{}));
-  assert(board.add_column(board_plane, Columns::TireType{}));
-  assert(board.add_column(board_plane, Columns::P2P{}));
-  assert(board.add_column(board_plane, Columns::LapDist{}));
+  pthread_setname_np(render_thread.native_handle(), "NC rendering");
 
-  while (!stop_tok.stop_requested()) {
-    auto render_start = Time::Clock::now();
-    auto block_until = render_start + MAX_REDRAW_HZ;
+  // Configure root input handler, create and configure input thread;
+  Input::InputHandler root_handler{};
+  std::jthread input_thread;
+  {
+    using Input::KeyWithMod;
+    using Input::Modifier;
+    root_handler
+        .register_callback(
+            KeyWithMod('=', Modifier::SHIFT), "Increase the delay by 1s",
+            [this] {
+              sess.set_delay_sec(sess.get_delay_sec().value_or(0) + 1);
+            })
+        .register_callback(KeyWithMod('-', Modifier::NONE),
+                           "Decrease the delay by 1s only if delay is nonzero",
+                           [this] {
+                             int delay = sess.get_delay_sec().value_or(0);
+                             sess.set_delay_sec((delay > 0) ? delay - 1 : 0);
+                           })
+        .register_callback(
+            KeyWithMod('q', Modifier::NONE), "Exit the application",
+            [] { App::AppContext::Shutdown("Shutdown requested by user"); })
+        .duplicate_callback(KeyWithMod('q', Modifier::NONE),
+                            KeyWithMod('C', Modifier::CTRL));
 
-    auto next_frame = sess.next_frame();
-    if (next_frame.has_value()) {
-      if (!board.inform_new_frame(std::move(next_frame.value())).has_value()) {
-        Tools::Log::Warn("Unhandled board-render failure!", "MAIN-BOARD");
+    auto root_input_callback = [&root_layout,
+                                handler = std::move(root_handler)](
+                                   Input::KeyWithMod const &k) mutable {
+      // Primary input callback. Invoked in other thread, so must be
+      // mindful of thread safety. Should first handle global input,
+      // then pass to root_layout for contextual input.
+      bool handled = handler.has_registered(k);
+
+      if (handled)
+        handler.handle_input(k);
+      else
+        handled = root_layout.take_input(k);
+    };
+
+    // Interface worker spawns and manages input thread
+    input_thread = std::jthread{Workers::KeyWorker{
+        nc, key_cond, key_queue_mtx, key_queue, running, sess,
+        [f = std::move(root_input_callback)](
+            Input::KeyWithMod const &k) mutable { f(k); }}};
+
+    pthread_setname_np(input_thread.native_handle(), "Input");
+  }
+
+  ncinput in{};
+
+  uint pre_dim_x = 0;
+  uint pre_dim_y = 0;
+
+  std_plane->get_dim(&pre_dim_y, &pre_dim_x);
+
+  Time::TimePoint last_tick = Time::Clock::now();
+
+  using Telemetry::TelemetryBoard;
+  using Telemetry::TelemetryQueue;
+
+  auto board_inform = [](Core::Session &sess, TelemetryBoard &board)
+      -> std::expected<void,
+                       std::variant<TelemetryBoard::Err, TelemetryQueue::Err>> {
+    auto queue_res = sess.next_frame();
+
+    if (!queue_res.has_value())
+      return std::unexpected(queue_res.error());
+
+    return board.inform_new_frame(std::move(queue_res.value()));
+  };
+
+  auto last_full_render = Time::Clock::now();
+  bool init_render_done = false;
+
+  std::expected<void, UI::RenderErr> render_res;
+  std::expected<void, UI::RenderErr> solve_res;
+
+  while (!stop_tok.stop_requested()) [[likely]] {
+
+    std::this_thread::sleep_for(Time::Duration::UIntMilliSec(10));
+
+    if ((nc.get(false, &in) != 0) && (in.evtype == ncpp::EvType::Press)) {
+      std::lock_guard lock(key_queue_mtx);
+      key_queue.emplace(Input::KeyWithMod(in));
+      key_cond.notify_one();
+    }
+
+    UI::RenderLevel render_level =
+        (!init_render_done || board_inform(sess, board).has_value() ||
+         ((Time::Clock::now() - last_full_render) >
+          Time::Duration::UIntMilliSec(100)))
+            ? UI::RenderLevel::FULL
+            : UI::RenderLevel::LIGHT;
+
+    init_render_done =
+        init_render_done || (render_level == UI::RenderLevel::FULL);
+
+    last_full_render = (render_level == UI::RenderLevel::FULL)
+                           ? Time::Clock::now()
+                           : last_full_render;
+
+    {
+      auto lock = render_mtx.lock_shared();
+
+      // CALLGRIND_START_INSTRUMENTATION;
+      // CALLGRIND_TOGGLE_COLLECT;
+      render_res = root_layout.render(render_level, UI::FocusState::FOCUSED);
+      // CALLGRIND_STOP_INSTRUMENTATION;
+
+      if (!render_res.has_value()) {
+        UI::RenderErr &e = render_res.error();
+
+        if (e.reason == UI::RenderErr::NOP) {
+          App::AppContext::Log().warn(
+              "Allowing render NOP to fail passively: {}", e.what());
+        } else {
+          App::AppContext::Log().error("Failed to render: {}", e.what());
+          App::AppContext::Shutdown("Encountered error rendering: " + e.what());
+          break;
+        }
       }
     }
 
-    Tools::Draw::border_with_title(board_plane, "Telemetry");
+    // Possible optimization: use built in notcurses resize_cb
+    // functionality and avoid this global check
+    // Update: Best way will be to use it on only the std plane, and have that
+    // trigger a solve call. Will need some sort of global state, I think
+    // putting it in AppContext is best.
 
-    board.draw_columns();
-    board.draw_event_info(event_info_plane);
-    sess.draw_telem_status(telem_status_plane);
+    // Note: For some reason if this is pre-render it doesn't work?
+    if ((std_plane->get_dim_y() != pre_dim_y) ||
+        (std_plane->get_dim_x() != pre_dim_x)) [[unlikely]] {
+      solve_res = root_layout.solve(std_plane);
+      if (!solve_res.has_value()) {
+        App::AppContext::Log().error("Failed to re-solve root layout: {}",
+                                     res.error().what());
+        App::AppContext::Shutdown("Encounted error re-solving root layout: " +
+                                  res.error().what());
+        break;
+      }
+    }
 
-    nc.render();
-
-    std_plane->erase();
-
-    std::this_thread::sleep_until(block_until);
-
-    Time::Duration::DblMilliSec gap = (Time::Clock::now() - render_start);
+    std_plane->get_dim(&pre_dim_y, &pre_dim_x);
 
     last_tick = Time::Clock::now();
   }
 
-  Tools::Log::Debug("Exited leaderboard loop", "LEADERBOARD");
-  nc.stop();
+  input_thread.request_stop();
+  render_thread.request_stop();
+
+  App::AppContext::Log().debug("Exiting leaderboard loop");
 }
 
 }; // namespace Workers

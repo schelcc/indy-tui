@@ -1,36 +1,36 @@
-#include <chrono>
 #include <concepts>
 #include <memory>
 #include <semaphore>
+#include <stop_token>
 #include <thread>
 
 namespace Tools {
 
 /** @brief Simple timed worker which releases a binary semaphore every period of
  * its configured duration. */
+template <typename D>
+  requires requires(D d) {
+    std::atomic<D>(d);
+    std::this_thread::sleep_for(d);
+  }
 class Timer {
   std::shared_ptr<std::binary_semaphore> _release;
   std::shared_ptr<std::binary_semaphore> _stagger;
 
   std::binary_semaphore _start{0};
 
-  using duration_t = std::chrono::duration<size_t, std::ratio<1, 1000>>;
-  std::atomic<duration_t> _duration;
+  std::atomic<D> _duration;
 
-  std::atomic_bool _running;
-
-  std::thread _thread;
+  std::jthread _thread;
 
 public:
-  Timer(std::shared_ptr<std::binary_semaphore> release,
-        std::chrono::duration<size_t, std::ratio<1, 1000>> duration =
-            std::chrono::milliseconds(1000))
-      : _release(release), _duration(duration), _running(true) {
-    _thread = std::thread{[this]() {
+  Timer(std::shared_ptr<std::binary_semaphore> release, D const duration)
+      : _release(release), _duration(duration) {
+    _thread = std::jthread{[this](std::stop_token stop_tok) {
       // Block for start signal
       _start.acquire();
 
-      while (_running) {
+      while (!stop_tok.stop_requested()) {
         // TODO : Add pausing
         _release->release();
         std::this_thread::sleep_for(_duration.load());
@@ -38,16 +38,13 @@ public:
     }};
   }
   Timer(std::shared_ptr<std::binary_semaphore> release,
-        std::shared_ptr<std::binary_semaphore> stagger,
-        std::chrono::duration<size_t, std::ratio<1, 1000>> duration =
-            std::chrono::milliseconds(1000))
-      : _release(release), _stagger(stagger), _duration(duration),
-        _running(true) {
-    _thread = std::thread{[this]() {
+        std::shared_ptr<std::binary_semaphore> stagger, D duration)
+      : _release(release), _stagger(stagger), _duration(duration) {
+    _thread = std::jthread{[this](std::stop_token stop_tok) {
       // Block for start signal
       _start.acquire();
 
-      while (_running) {
+      while (!stop_tok.stop_requested()) {
         _stagger->acquire();
         _release->release();
         std::this_thread::sleep_for(_duration.load());
@@ -61,10 +58,10 @@ public:
 
   /** @brief Stop the timer. Thread cannot return from stopped state, making the
    * timer useless after stop is called. Thread safe. */
-  void stop() noexcept { _running = false; }
+  void stop() noexcept { _thread.request_stop(); }
 
   /** @brief Change the timer's period. Thread safe. */
-  void set_period(std::convertible_to<duration_t> auto const period) {
+  void set_period(std::convertible_to<D> auto const period) {
     _duration.load(period);
   }
 };

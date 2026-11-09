@@ -1,4 +1,3 @@
-#include <exception>
 #include <string_view>
 
 #include <ixwebsocket/IXHttp.h>

@@ -1,28 +1,58 @@
 #pragma once
-#include "core.hpp"
-#include "tools/numeric.hpp"
-#include "ui/layout.hpp"
+
 #include <cassert>
 #include <cmath>
-#include <memory>
 #include <ncpp/CellStyle.hh>
 #include <ncpp/Palette.hh>
 #include <ncpp/Plane.hh>
 #include <notcurses/notcurses.h>
 #include <string_view>
 
+#include "app_context.hpp"
+#include "tools/numeric.hpp"
+#include "ui/types.hpp"
+
 namespace Tools::Draw {
 
 static constexpr std::wstring_view PROGBAR_CHARS_FULL_HEIGHT = L" ▏▎▍▌▋▊▉";
 static constexpr std::wstring_view PROGBAR_CHARS_NARROW = L"╌┄┈";
+
+namespace BOXDRAW_BASE {
+static constexpr wchar_t VERT = L'│';
+static constexpr wchar_t HORI = L'─';
+
+static constexpr wchar_t T_L = L'┤';
+static constexpr wchar_t T_R = L'├';
+static constexpr wchar_t T_U = L'┴';
+static constexpr wchar_t T_D = L'┬';
+
+static constexpr wchar_t CROSS = L'┼';
+}; // namespace BOXDRAW_BASE
+
+namespace BOXDRAW_STRAIGHT {
+using namespace BOXDRAW_BASE;
+static constexpr wchar_t LL = L'└';
+static constexpr wchar_t LR = L'┘';
+static constexpr wchar_t UL = L'┌';
+static constexpr wchar_t UR = L'┐';
+}; // namespace BOXDRAW_STRAIGHT
+
+namespace BOXDRAW_ROUND {
+using namespace BOXDRAW_BASE;
+static constexpr wchar_t LL = L'╰';
+static constexpr wchar_t LR = L'╯';
+static constexpr wchar_t UL = L'╭';
+static constexpr wchar_t UR = L'╮';
+}; // namespace BOXDRAW_ROUND
 
 enum class BarType {
   FULL_HEIGHT,
   SHORT,
 };
 
-static inline std::wstring prog_bar(double pct, size_t chars,
-                                    BarType bar_type = BarType::FULL_HEIGHT) {
+static inline std::wstring
+prog_bar(double const in_pct, size_t const chars,
+         BarType const bar_type = BarType::FULL_HEIGHT) noexcept {
   using namespace Tools::Numeric;
 
   std::wstring complete_char{};
@@ -42,8 +72,7 @@ static inline std::wstring prog_bar(double pct, size_t chars,
   };
   };
 
-  // assert(leq(pct, 1.0));
-  pct = std::min(pct, 1.0);
+  double pct = std::min(in_pct, 1.0);
 
   // Replace all chars up to the incomplete portion with a full block
   double amt = pct * static_cast<double>(chars);
@@ -71,37 +100,17 @@ static inline std::wstring prog_bar(double pct, size_t chars,
   return bar;
 }
 
-enum class PaletteColors {
-  BLACK_HARD = 0,
-  RED_HARD = 1,
-  GREEN_HARD = 2,
-  YELLOW_HARD = 3,
-  BLUE_HARD = 4,
-  PURPLE_HARD = 5,
-  CYAN_HARD = 6,
-  GRAY_HARD = 7,
-  BLACK_SOFT = 8,
-  RED_SOFT = 9,
-  GREEN_SOFT = 10,
-  YELLOW_SOFT = 11,
-  BLUE_SOFT = 12,
-  PURPLE_SOFT = 13,
-  CYAN_SOFT = 14,
-  GRAY_SOFT = 15,
-  NONE = 16,
-};
-
 enum class Target {
   FG,
   BG,
 };
 
-static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
+static inline uint64_t mask_pal_channels(ncpp::Plane *const p,
                                          Target const target,
-                                         PaletteColors const color) {
+                                         UI::Color const color) noexcept {
   uint64_t chan = p->get_channels();
 
-  if (color == PaletteColors::NONE)
+  if (color == UI::Color::NONE)
     return chan;
 
   ncpp::Palette pal{};
@@ -120,28 +129,33 @@ static inline uint64_t mask_pal_channels(std::shared_ptr<ncpp::Plane> p,
   return chan;
 }
 
-static inline void set_row_color(std::shared_ptr<ncpp::Plane> p,
-                                 size_t const row, Target const target,
-                                 PaletteColors const color) {
+static inline void set_row_color(ncpp::Plane *const p, size_t const row,
+                                 Target const target,
+                                 UI::Color const color) noexcept {
   uint64_t chan = mask_pal_channels(p, target, color);
 
   p->stain(row, 1, 1, p->get_dim_x() - 2, chan, chan, chan, chan);
 }
 
 static inline std::string trunc_str(std::string_view const s,
-                                    size_t const max_len) {
+                                    size_t const max_len) noexcept {
   return s.length() <= (max_len - 3)
              ? std::string{s}
              : std::string{s.substr(0, max_len)} + "...";
 }
 
+static inline void border(ncpp::Plane *const p,
+                          UI::Color color = UI::Color::NONE) noexcept {
+  auto chan = mask_pal_channels(p, Target::FG, color);
+
+  p->perimeter_rounded(ncpp::NCBox::CornerMask, chan, 0);
+}
+
 static inline void
-border_with_title(std::shared_ptr<ncpp::Plane> p, std::string const &name,
-                  UI::Focus const focus = UI::Focus::INACTIVE) {
-  auto color = mask_pal_channels(p, Target::FG,
-                                 (focus == UI::Focus::INACTIVE)
-                                     ? PaletteColors::NONE
-                                     : PaletteColors::BLUE_SOFT);
+border_with_title(ncpp::Plane *const p, std::string const &name,
+                  UI::Color const pal_color = UI::Color::GRAY_HARD) noexcept {
+  App::AppContext::Log().debug("Drawing border with title \"{}\"", name);
+  auto color = mask_pal_channels(p, Target::FG, pal_color);
 
   p->perimeter_rounded(ncpp::NCBox::CornerMask, color, 0);
 

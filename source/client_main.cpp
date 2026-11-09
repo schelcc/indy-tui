@@ -1,13 +1,24 @@
+#include <array>
 #include <atomic>
+#include <cmath>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <print>
 #include <pthread.h>
+#include <queue>
+#include <spdlog/common.h>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <google/protobuf/descriptor.h>
@@ -23,11 +34,11 @@
 #include "core/session.hpp"
 #include "core/workers.hpp"
 
-#include "tools/logger.hpp"
+#include "core/input.hpp"
+#include "time.hpp"
 
 int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
-  Tools::Log::SetOut("indycpp.log");
-  Tools::Log::SetLevel(Tools::Log::NONE);
+  App::AppContext::Log().set_level(spdlog::level::info);
 
   using namespace CLI;
 
@@ -42,10 +53,17 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
       .set_short_opt("h")
       .set_default_state(false);
 
+  parser.add_element<Flag>("display demo")
+      .set_help_msg("Enter the display-demo mode of operation. For testing "
+                    "only, ignores all other args/options/flags.")
+      .set_long_opt("disp-demo")
+      .set_default_state(false);
+
   parser.add_element<Arg>("mode")
-      .set_help_msg("What mode of operation to use. Options are 'live', "
-                    "'live-debug', and "
-                    "'local-replay'.")
+      .set_help_msg(
+          "What mode of operation to use. Options are 'demo', 'live', "
+          "'live-debug', and "
+          "'local-replay'.")
       .set_handler([](std::string_view const s) -> Core::SessionSource {
         if (s == "live")
           return Core::SessionSource::SERVED_REMOTE;
@@ -56,6 +74,20 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
         else
           throw CLI::InputParsingErr(
               std::format("Invalid input for mode: '{}'", s));
+      });
+
+  parser.add_element<Option>("initial delay")
+      .set_help_msg(
+          "Delay to start session with, in seconds. Defaults to '0s'.")
+      .set_long_opt("delay")
+      .set_default_input("0")
+      .set_handler([](std::string_view const s) -> size_t {
+        try {
+          return std::stoul(s.data());
+        } catch (std::invalid_argument &) {
+          throw CLI::InputParsingErr(
+              std::format("Invalid input for initial delay: '{}'", s));
+        }
       });
 
   parser.add_element<Option>("source")
@@ -130,33 +162,74 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
       .set_long_opt("url")
       .set_short_opt("u");
 
-  parser.add_element<Option>("log output")
-      .set_help_msg("Where the log will be written to, if logging is enabled")
-      .set_long_opt("log-out")
-      .set_default_input("indy-tui.log")
-      .set_handler([](std::string_view const s) { return s; });
+  // parser.add_element<Option>("log output")
+  //     .set_help_msg("Where the log will be written to, if logging is
+  //     enabled") .set_long_opt("log-out") .set_default_input("indy-tui.log")
+  //     .set_handler([](std::string_view const s) { return s; });
+
+  parser.add_element<Flag>("ncstats")
+      .set_help_msg("Whether to print notcurses stats upon graceful exit. "
+                    "Stats will not be "
+                    "print upon ungraceful exit regardless of this flag.")
+      .set_long_opt("nc-stats")
+      .set_default_state(false);
 
   parser.add_element<Option>("log level")
       .set_help_msg(
           "What level of information to include in the logging, if "
-          "enabled. Options are 'none', 'warn' 'info', 'debug', 'debug2'.")
+          "enabled. Options are 'none', 'warn' 'info', 'debug', 'trace'.")
       .set_long_opt("log-level")
       .set_default_input("info")
-      .set_handler([](std::string_view const s) -> Tools::Log::Level {
+      .set_handler([](std::string_view const s) -> spdlog::level::level_enum {
         if (s == "none")
-          return Tools::Log::NONE;
+          return spdlog::level::off;
         else if (s == "warn")
-          return Tools::Log::WARN;
+          return spdlog::level::warn;
         else if (s == "info")
-          return Tools::Log::INFO;
+          return spdlog::level::info;
         else if (s == "debug")
-          return Tools::Log::DEBUG;
-        else if (s == "debug2")
-          return Tools::Log::DEBUG2;
+          return spdlog::level::debug;
+        else if (s == "trace")
+          return spdlog::level::trace;
         else
           throw CLI::InputParsingErr(
               std::format("Invalid input for log level: '{}'", s));
       });
+
+#ifndef NDEBUG
+  /* Flag added only in debug builds */
+  parser.add_element<Option>("timed")
+      .set_help_msg(
+          "Run the program for the given amount of time. Counts from start of "
+          "program, not from start of session. If no unit is given, assumes "
+          "seconds. Allowable units are 's', 'min'. Expects non-negative "
+          "integer with a unit suffix, like '10s' for ten seconds.")
+      .set_long_opt("timed")
+      .set_default_input("0")
+      .set_handler([](std::string_view const s) -> Time::Duration::UIntSec {
+        try {
+          if (s.ends_with("min")) {
+            return Time::Duration::UIntSec(
+                std::stoul(s.substr(0, s.length() - 3).data()) * 60);
+          } else if (s.ends_with("s")) {
+            return Time::Duration::UIntSec(
+                std::stoul(s.substr(0, s.length() - 1).data()));
+          } else {
+            return Time::Duration::UIntSec(std::stoul(s.data()));
+          }
+        } catch (std::invalid_argument &e) {
+          throw CLI::InputParsingErr(
+              std::format("Invalid input for time period: '{}'", s));
+        }
+      });
+
+  // There's gotta be a better solution
+  parser.add_element<Flag>("pause")
+      .set_help_msg(
+          "Whether to pause for 5 seconds to allow time to attach GDB.")
+      .set_long_opt("pause")
+      .set_default_state(false);
+#endif
 
   parser.finalize();
 
@@ -177,8 +250,14 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  Tools::Log::SetOut(parser.get<Option, std::string_view>("log output"));
-  Tools::Log::SetLevel(parser.get<Option, Tools::Log::Level>("log level"));
+#ifndef NDEBUG
+  if (parser.get<Flag, bool>("pause")) {
+    std::this_thread::sleep_for(Time::Duration::UIntSec(5));
+  }
+#endif
+
+  App::AppContext::Log().set_level(
+      parser.get<Option, spdlog::level::level_enum>("log level"));
 
   if (parser.get<Flag, bool>("serve replay")) {
     // Will not return to main from here
@@ -200,12 +279,55 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  std::vector<ncpp::NCKey> key_queue{};
+  /* Everything after this will interact w/ notcurses */
+
+  /*
+  // Maybe temporary, install a terminate handler which kills
+  // notcurses, so hopefully we can retain the terminal
+  std::set_terminate(&on_terminate);
+  */
+
+  if (parser.get<Flag, bool>("display demo")) {
+    // Will not return to main from here. Set up a minimum runtime context with
+    // display and input
+    std::vector<ncpp::NCKey> key_queue{};
+
+    std::atomic_flag running{true};
+    setlocale(LC_ALL, "");
+    notcurses_options nc_opts{};
+    nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
+    ncpp::NotCurses nc{nc_opts};
+
+    std::jthread output_thread{Workers::TestInterfaceWorker{nc, running}};
+    std::jthread input_thread{Workers::TestKeyWorker{nc, key_queue, running}};
+
+    pthread_setname_np(output_thread.native_handle(), "Display");
+    pthread_setname_np(input_thread.native_handle(), "Input");
+
+    App::AppContext::AwaitShutdown();
+    App::AppContext::Log().info(
+        "Shutdown requested for reason '{}'",
+        App::AppContext::GetReason().value_or(
+            "no reason provided -- ungraceful shutdown"));
+
+    input_thread.request_stop();
+    output_thread.request_stop();
+
+    input_thread.join();
+    output_thread.join();
+
+    App::AppContext::Log().info("Exiting");
+    return EXIT_SUCCESS;
+  }
+
+  std::queue<Input::KeyWithMod> key_queue{};
+  std::mutex key_queue_mtx{};
+  std::condition_variable_any key_cond{};
 
   std::atomic_flag running{true};
   Core::Session sess(parser.get<Arg, Core::SessionSource>("mode"));
 
-  size_t delay = 2;
+  size_t delay = parser.get<Option, size_t>("initial delay");
 
   sess.set_delay_sec(delay);
 
@@ -215,33 +337,109 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   setlocale(LC_ALL, "");
   notcurses_options nc_opts{};
 
-  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS;
+  nc_opts.flags = NCOPTION_INHIBIT_SETLOCALE | NCOPTION_NO_QUIT_SIGHANDLERS |
+                  NCOPTION_SUPPRESS_BANNERS;
 
   ncpp::NotCurses nc{nc_opts};
 
-  std::jthread output_thread{Workers::InterfaceWorker{nc, running, sess}};
-  std::jthread input_thread{
-      Workers::KeyWorker{nc, key_queue, running, sess, delay}};
+  std::jthread output_thread{Workers::InterfaceWorker{
+      nc, running, sess, key_cond, key_queue, key_queue_mtx}};
 
   pthread_setname_np(output_thread.native_handle(), "Display");
-  pthread_setname_np(input_thread.native_handle(), "Input");
+
+#ifndef NDEBUG
+  std::jthread timed_program_thread;
+  Time::Duration::UIntSec timed_program_dur =
+      parser.get<Option, Time::Duration::UIntSec>("timed");
+  if (timed_program_dur.count() > 0) {
+    timed_program_thread = std::jthread{[dur = timed_program_dur] {
+      std::this_thread::sleep_for(dur);
+      App::AppContext::Shutdown("timed program duration completed");
+    }};
+  }
+#endif
 
   App::AppContext::AwaitShutdown();
-  Tools::Log::Info(
-      std::format("Shutdown requested for reason '{}'",
-                  App::AppContext::GetReason().value_or(
-                      "no reason provided -- ungraceful shutdown")),
-      "MAIN");
+  App::AppContext::Log().info("Shutdown requested for reason '{}'",
+                              App::AppContext::GetReason().value_or(
+                                  "no reason provided -- ungraceful shutdown"));
 
-  // running.clear();
-  input_thread.request_stop();
+  std::println("Shutdown requested for reason '{}'",
+               App::AppContext::GetReason().value_or(
+                   "no reason provided -- ungraceful shutdown"));
+
   output_thread.request_stop();
 
-  input_thread.join();
   output_thread.join();
 
   sess.end_session();
 
-  Tools::Log::Info("Exiting (graceful)...");
-  std::println("Done.");
+  auto stats = nc.stats_alloc();
+  nc.get_stats(stats);
+
+  using Time::Duration::ranging_sec_print;
+  using Time::Duration::UIntNanoSec;
+
+  // clang-format off
+  auto const render_ns		= UIntNanoSec(stats->render_ns);
+  auto const render_max_ns	= UIntNanoSec(stats->render_max_ns);
+  auto const render_min_ns	= UIntNanoSec(stats->render_min_ns);
+  auto const render_avg_ns	= render_ns / stats->renders;
+
+  auto const raster_ns		= UIntNanoSec(stats->raster_ns);
+  auto const raster_max_ns	= UIntNanoSec(stats->raster_max_ns);
+  auto const raster_min_ns	= UIntNanoSec(stats->raster_min_ns);
+  auto const raster_avg_ns	= raster_ns / stats->writeouts;
+
+  auto const writeout_ns	= UIntNanoSec(stats->writeout_ns);
+  auto const writeout_max_ns	= UIntNanoSec(stats->writeout_max_ns);
+  auto const writeout_min_ns	= UIntNanoSec(stats->writeout_min_ns);
+  auto const writeout_avg_ns	= writeout_ns / stats->writeouts;
+
+  double const total_write_ns		= writeout_ns.count() + raster_ns.count();
+
+  double const raster_shareof_write	= (raster_ns.count() / total_write_ns) * 100;
+  double const writeout_shareof_write	= (writeout_ns.count() / total_write_ns) * 100;
+
+  double const pct_elisions = (static_cast<double>(stats->cellelisions)
+			       / (stats->cellelisions + stats->cellemissions)) * 100;
+  // clang-format on
+
+  // Collect stat strings in a vec so we can put them in both log and stdout
+  // if requested
+  std::vector<std::string> s{
+      std::format("render time   -- max: {:>9} / min: {:>9} / avg: {:>9}",
+                  ranging_sec_print(render_max_ns),
+                  ranging_sec_print(render_min_ns),
+                  ranging_sec_print(render_avg_ns)),
+      std::format("raster time   -- max: {:>9} / min: {:>9} / avg: {:>9}",
+                  ranging_sec_print(raster_max_ns),
+                  ranging_sec_print(raster_min_ns),
+                  ranging_sec_print(raster_avg_ns)),
+      std::format("writeout time -- max: {:>9} / min: {:>9} / avg: {:>9}",
+                  ranging_sec_print(writeout_max_ns),
+                  ranging_sec_print(writeout_min_ns),
+                  ranging_sec_print(writeout_avg_ns)),
+      std::format("rasters vs. writes -- {} / {}", stats->renders,
+                  stats->writeouts),
+      std::format("raster's share of total write   -- {:.2f}%",
+                  raster_shareof_write),
+      std::format("writeout's share of total write -- {:.2f}%",
+                  writeout_shareof_write),
+      std::format("cells emitted  -- {}", stats->cellemissions),
+      std::format("cells ellided  -- {}", stats->cellelisions),
+      std::format("% cell elision -- {:.2f}%", pct_elisions)};
+
+  nc.stop();
+
+  for (auto const &line : s) {
+    App::AppContext::Log().info("{}", line);
+  }
+
+  if (parser.get<Flag, bool>("ncstats")) {
+    for (auto const &line : s)
+      std::println("{}", line);
+  }
+
+  App::AppContext::Log().info("Exiting");
 }

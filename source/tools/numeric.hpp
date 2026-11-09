@@ -1,6 +1,5 @@
 #include <cmath>
 #include <limits>
-#include <numeric>
 #include <type_traits>
 
 namespace Tools::Numeric {

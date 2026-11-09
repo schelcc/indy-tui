@@ -3,22 +3,20 @@
 #include <notcurses/nckeys.h>
 #include <notcurses/notcurses.h>
 
-#include "tools/logger.hpp"
-
-#include <format>
+#include "core/app_context.hpp"
 
 namespace Tools::NCPP {
 
 static inline void log_keypress(ncinput *ni) {
   // clang-format off
-      Tools::Log::Debug(std::format("UTF8: {}", ni->utf8), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("BUILTIN SHIFT: {}", ni->shift), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("BUILTIN CTRL: {}", ni->ctrl), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("BUILTIN ALT: {}", ni->alt), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("EFF. TEXT: {}", ni->eff_text), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("PRED. CTRL: {}", ncinput_ctrl_p(ni)), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("PRED. SHIFT: {}", ncinput_shift_p(ni)), "KEY-PRESSED");
-      Tools::Log::Debug(std::format("PRED. ALT: {}", ncinput_alt_p(ni)), "KEY-PRESSED");
+  App::AppContext::Log().debug("UTF8: {}", ni->utf8);
+  App::AppContext::Log().debug("BUILTIN SHIFT: {}", ni->shift);
+  App::AppContext::Log().debug("BUILTIN CTRL: {}", ni->ctrl);
+  App::AppContext::Log().debug("BUILTIN ALT: {}", ni->alt);
+  App::AppContext::Log().debug("EFF. TEXT: {}", ni->eff_text);
+  App::AppContext::Log().debug("PRED. CTRL: {}", ncinput_ctrl_p(ni));
+  App::AppContext::Log().debug("PRED. SHIFT: {}", ncinput_shift_p(ni));
+  App::AppContext::Log().debug("PRED. ALT: {}", ncinput_alt_p(ni));
   // clang-format on
 }
 

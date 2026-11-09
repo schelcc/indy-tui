@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <cstddef>
 #include <type_traits>
 #include <variant>
 
@@ -23,6 +23,56 @@ template <typename... Ts> struct Overload : Ts... {
   using Ts::operator()...;
 };
 
-using MultiStr = std::variant<std::string, std::wstring>;
+/** @brief Requires T be both copy assignable and constructible. */
+template <typename T>
+concept CopySafe =
+    (std::is_copy_assignable_v<T> && std::is_copy_constructible_v<T>);
+
+/** @brief Requires T be both move assignable and constructible. */
+template <typename T>
+concept MoveSafe =
+    (std::is_move_assignable_v<T> && std::is_move_constructible_v<T>);
+
+/** @brief Requires T is a non-const reference */
+template <typename T>
+concept NotConstRef = std::is_same_v<T, std::remove_cvref_t<T> &>;
+
+/** @brief Requires T is a const reference */
+template <typename T>
+concept ConstRef = std::is_same_v<T, std::remove_cvref_t<T> const &>;
+
+/** @brief Determine whether the given variant has the given type in its list of
+ * alternatives. */
+template <typename T, typename V, size_t I = 0>
+consteval bool variant_has_alternative() {
+  if constexpr (I >= std::variant_size_v<V>)
+    return false;
+  else if constexpr (!std::is_same_v<std::variant_alternative_t<I, V>, T>)
+    return variant_has_alternative<T, V, I + 1>();
+  else
+    return true;
+}
+
+/** @brief Concept for VariantHasAlternative. */
+template <typename T, typename V>
+concept VariantHasAlternative = variant_has_alternative<T, V>();
+
+/** @brief Macro to evaluate an expression returning std::expected
+and, if the return value has the error value, early-return the
+value. Otherwise the returned value is dropped. */
+#define TRY_DROP(expr)                                                         \
+  {                                                                            \
+    auto _ = (expr);                                                           \
+    if (!_.has_value())                                                        \
+      return _.error();                                                        \
+  }
+
+/** @brief Same as TRY_DROP(), but assigns the value to the given name if
+ * successful. */
+#define TRY_USE(name, expr)                                                    \
+  auto RESULT_##name = (expr);                                                 \
+  if (!RESULT_##name.has_value())                                              \
+    return RESULT_##name.error();                                              \
+  auto name = std::move(RESULT_##name).value();
 
 }; // namespace Core
