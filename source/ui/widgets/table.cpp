@@ -242,6 +242,12 @@ void Table::move_cursor(UI::CursorDirection const d) noexcept {
   App::AppContext::Log().trace("Cursor position is now: {}", cursor_target);
 }
 
+std::string Table::cursor_backing_key() const noexcept {
+  return (draw_cursor.test() && !no_backing_keys.test())
+             ? _backing_keys.at(_cursor_pos.load())
+             : "";
+}
+
 void Table::set_dim(Table::Dim const &d) noexcept {
   // Do nothing if same dimensions
   auto old_dim = dim.get_mut();

@@ -258,6 +258,11 @@ public:
    * if `draw_cursor` is not set. */
   void move_cursor(UI::CursorDirection const) noexcept;
 
+  /** @brief Get the backing key under the table's cursor. Requires both backing
+   * keys and cursor to be enabled. Returns empty string if either is disabled.
+   */
+  std::string cursor_backing_key() const noexcept;
+
   /** @brief Set the table's dimensions. Fully clears the table. */
   void set_dim(Dim const &) noexcept;
 
@@ -293,7 +298,7 @@ public:
   std::expected<void, WidgetErr> set_backing_keys(std::vector<std::string> &&,
                                                   size_t const = 0) noexcept;
 
-  /** Force the next render to render all columns. */
+  /** @brief Force the next render to render all columns. */
   void damage_all() noexcept;
 
   /** @brief Apply this view to a plane. Does not synchronize plane access. */

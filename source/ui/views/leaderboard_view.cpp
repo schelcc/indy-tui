@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstddef>
-#include <future>
 #include <iterator>
 #include <notcurses/nckeys.h>
 #include <ranges>
@@ -37,6 +36,8 @@ LeaderboardView::LeaderboardView() : table_info() {
     t->table.column_sep = 0;
     t->table.padding_top = 1;
     t->table.padding_left = 1;
+
+    *t->table.cursor_skip_rows.get_mut() = {0};
   }
 
   using namespace Input;
@@ -56,25 +57,21 @@ LeaderboardView::LeaderboardView() : table_info() {
           "Toggle highlighting on the current row", [this] {
             auto t = table_info.get_mut();
 
-            auto res = t->table.get_backing_key(table_cursor.load() %
-                                                t->table.dim.get_const()->rows);
-            if (!res.has_value()) {
-              App::AppContext::Log().warn(
-                  "Failed to match table's cursor to a backing key");
-              return;
-            }
+            auto res = t->table.cursor_backing_key();
 
-            if (t->user_flagged_drivers.contains(res.value())) {
-              t->user_flagged_drivers.erase(res.value());
+            if (t->user_flagged_drivers.contains(res)) {
+              t->user_flagged_drivers.erase(res);
               App::AppContext::Log().debug(
                   "Removed row with backing key \"{}\" to user-flagged drivers",
-                  res.value());
+                  res);
             } else {
-              t->user_flagged_drivers.emplace(res.value());
+              t->user_flagged_drivers.emplace(res);
               App::AppContext::Log().debug(
                   "Added row with backing key \"{}\" to user-flagged drivers",
-                  res.value());
+                  res);
             }
+
+            _update_starred.store(true);
           });
 }
 
@@ -84,12 +81,12 @@ void LeaderboardView::set_columns(std::vector<ColumnInfo> &&cs) {
 }
 
 // Callback for async column-function application
-std::vector<std::optional<UI::String>>
-apply_column(LeaderboardView::ColumnInfo const &c,
-             std::vector<Telemetry::DriverTelemetry> const &d) {
-  return d | std::views::transform(c) |
-         std::ranges::to<std::vector<std::optional<UI::String>>>();
-}
+// std::vector<std::optional<UI::String>>
+// apply_column(LeaderboardView::ColumnInfo const &c,
+//              std::vector<Telemetry::DriverTelemetry> const &d) {
+//   return d | std::views::transform(c) |
+//          std::ranges::to<std::vector<std::optional<UI::String>>>();
+// }
 
 std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
@@ -110,10 +107,10 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
                                  "drivers and {} column functions",
                                  drivers->size(), t->cols.size());
 
-    t->table.set_dim(Table::Dim(drivers->size(), t->cols.size()));
+    t->table.set_dim(Table::Dim(drivers->size() + 1, t->cols.size()));
 
-    _swap_col =
-        std::vector<std::optional<UI::String>>(drivers->size(), std::nullopt);
+    _swap_col = std::vector<std::optional<UI::String>>(drivers->size() + 1,
+                                                       std::nullopt);
 
     // Reset the cursor to be a large number which is 0 mod num drivers
     table_cursor = drivers->size() * 100;
@@ -134,15 +131,21 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
                                  drivers->size(), t->cols.size());
     // Reconfigure rows if neeeded. Already done if cols mismatched as
     // well -- only reached if just num drivers has changed.
-    t->table.set_dim(Table::Dim(drivers->size(), t->cols.size()));
+    t->table.set_dim(Table::Dim(drivers->size() + 1, t->cols.size()));
+
+    _swap_col = std::vector<std::optional<UI::String>>(drivers->size() + 1,
+                                                       std::nullopt);
 
     dim = *t->table.dim.get_const();
   }
 
-  if (focused)
+  if (focused) {
     t->table.draw_cursor.test_and_set();
-  else
+    t->table.damage_all();
+  } else {
     t->table.draw_cursor.clear();
+    t->table.damage_all();
+  }
 
   // Do nothing if we have no columns or no drivers
   if (!drivers->empty() && !t->cols.empty()) [[likely]] {
@@ -151,9 +154,6 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
     // Calculate and draw columns
     {
-      using OptStr = std::optional<UI::String>;
-      using ColStrPair = std::pair<size_t, std::future<std::vector<OptStr>>>;
-
       App::PerfContext::StartLeaderboardPopulationTime();
 
       std::expected<void, WidgetErr> res;
@@ -177,7 +177,8 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
       App::PerfContext::StopLeaderboardPopulationTime();
     }
 
-      // Reorder backing keys
+    // Reorder backing keys
+    {
       auto backing_reorder_res = t->table.set_backing_keys(
           std::ranges::fold_left(*drivers, std::vector<std::string>(),
                                  [](std::vector<std::string> &&v,

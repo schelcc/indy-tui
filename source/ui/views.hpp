@@ -164,6 +164,8 @@ private:
 
   std::vector<std::optional<UI::String>> _swap_col{};
 
+  std::atomic_bool _update_starred = false;
+
   void reconstruct_table(ThreadSafe::LockPair<TableInfo> &&) noexcept;
 
   // Logic the same across both renders
