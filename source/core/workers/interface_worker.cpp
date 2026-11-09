@@ -123,7 +123,7 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
 	    .disable_name_draw(),
 	ColumnInfo(DriverName<SessionType::PRACTICE>, "Name")
 	    .disable_left_border(),
-	ColumnInfo(EmptyColumn, "Starred")
+	ColumnInfo(Starred, "Starred")
 	    .disable_left_border()
 	    .disable_name_draw(),
 	ColumnInfo(Interval, "Interval"),

@@ -129,8 +129,8 @@ std::expected<void, TelemetryBoard::Err> TelemetryBoard::inform_new_frame(
   return {};
 }
 
-ThreadSafe::LockPair<std::vector<DriverTelemetry> const>
-TelemetryBoard::reorder_and_get() {
+ThreadSafe::LockPair<std::vector<DriverTelemetry>>
+TelemetryBoard::reorder_and_get() noexcept {
   // Order drivers by rank
   {
     std::unique_lock lock(_driver_vec_mtx);
@@ -151,17 +151,15 @@ TelemetryBoard::reorder_and_get() {
                     [&leader, &prev_idx, this](DriverTelemetry &d) {
                       d.gap_to_leader =
                           d.diff_to_car(leader).value_or(d.gap_to_leader);
-                      // d.calculate_gap(leader);
                       d.interval_to_next =
                           d.diff_to_car(_drivers.at(prev_idx++))
                               .value_or(d.interval_to_next);
-                      // d.calculate_interval(_drivers.at(prev_idx++));
                     });
     }
   }
 
   // Acquire and return a shared_lock on the drivers vec
-  return {std::shared_lock(_driver_vec_mtx), _drivers};
+  return {std::unique_lock(_driver_vec_mtx), _drivers};
 }
 
 }; // namespace Telemetry

@@ -77,6 +77,8 @@ public:
 
   std::atomic_size_t cur_laps = 0;
 
+  std::atomic_bool starred = false;
+
   /** @brief Increment the telemetry stale count. */
   void frame_passed() { _frames_since_telem++; }
 

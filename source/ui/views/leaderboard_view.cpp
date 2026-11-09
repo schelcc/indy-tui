@@ -89,8 +89,7 @@ void LeaderboardView::set_columns(std::vector<ColumnInfo> &&cs) {
 // }
 
 std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
-    ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const>
-        &&drivers,
+    ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry>> &&drivers,
     FocusState const focused, ncpp::Plane *const p) noexcept {
 
   if (drivers->size() == 0)
@@ -154,6 +153,11 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
     // Calculate and draw columns
     {
+      if (_update_starred.exchange(false)) {
+        for (auto &d : *drivers)
+          d.starred = t->user_flagged_drivers.contains(d._car_num);
+      }
+
       App::PerfContext::StartLeaderboardPopulationTime();
 
       std::expected<void, WidgetErr> res;
@@ -163,14 +167,9 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
       for (auto &col : t->cols) {
         _swap_col.at(0) = col.draw_name ? col.name : " ";
 
-        if (col.name == "Starred" && _update_starred.exchange(false))
-          col.func = [stars = t->user_flagged_drivers](
-                         Telemetry::DriverTelemetry const &d) -> UI::String {
-            return stars.contains(d._car_num) ? L"★" : L" ";
-          };
-
         std::transform(std::begin(*drivers), std::end(*drivers),
                        std::begin(_swap_col) + 1, col);
+
         res = t->table.swp_update_col(col_idx++, _swap_col);
       }
 

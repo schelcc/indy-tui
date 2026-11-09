@@ -31,6 +31,10 @@ static inline std::string Rank(Telemetry::DriverTelemetry const &d) {
   return std::format("{}", d.get_rank());
 }
 
+static inline UI::String Starred(Telemetry::DriverTelemetry const &d) {
+  return d.starred ? L"★" : L" ";
+}
+
 static inline UI::String EmptyColumn(Telemetry::DriverTelemetry const &) {
   return "";
 }

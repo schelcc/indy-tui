@@ -145,7 +145,7 @@ struct LeaderboardView {
   void set_columns(std::vector<ColumnInfo> &&);
 
   std::expected<void, RenderErr> update_and_render(
-      ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry> const> &&,
+      ThreadSafe::LockPair<std::vector<Telemetry::DriverTelemetry>> &&,
       FocusState const, ncpp::Plane *const) noexcept;
 
   // Lighter render

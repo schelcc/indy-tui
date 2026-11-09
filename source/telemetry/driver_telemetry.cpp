@@ -227,6 +227,7 @@ DriverTelemetry::DriverTelemetry(DriverTelemetry &&d) noexcept {
   _last_checkpt = std::move(d._last_checkpt);
   _cur_checkpt.store(d._cur_checkpt.load());
   _lap_length.store(d._lap_length);
+  starred.store(d.starred);
 }
 
 DriverTelemetry &DriverTelemetry::operator=(DriverTelemetry &&d) noexcept {
@@ -242,6 +243,7 @@ DriverTelemetry &DriverTelemetry::operator=(DriverTelemetry &&d) noexcept {
   _last_checkpt = std::move(d._last_checkpt);
   _cur_checkpt.store(d._cur_checkpt.load());
   _lap_length.store(d._lap_length);
+  starred.store(d.starred);
   return *this;
 }
 
