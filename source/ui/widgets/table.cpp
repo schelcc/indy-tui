@@ -424,7 +424,7 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
     rebuild_columns();
   }
 
-  App::AppContext::Log().debug("Draw table {}", name);
+  App::AppContext::Log().trace("Draw table {}", name);
 
   // Group columns, their planes, and their index, then filter out any
   // columns which are not damaged
