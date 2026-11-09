@@ -50,21 +50,15 @@ SessionStatusView::update_and_render(Core::Session const &sess,
                                UI::Color::GRAY_HARD, UI::Style::ITALIC);
 
   double delay_pct =
-      sess.get_accrued_delay_ms().count() / (1000 * delay_res.value_or(1));
+      (sess.get_accrued_delay_ms().count() / (1000 * delay_res.value_or(1))) *
+      100;
 
-  _swap_col.at(0) =
-      Core::SessionStatusStrs.at(static_cast<size_t>(sess.status.load()));
-  _swap_col.at(1) = std::move(msg_rate_str);
-  _swap_col.at(2) = std::move(delay_s);
-  _swap_col.at(3) = std::format("{:5.2f}%", delay_pct * 100);
-
-  auto res = table.swp_update_col(1, _swap_col);
-
-  // auto res = table.update_col(
-  //     1,
-  //     {Core::SessionStatusStrs.at(static_cast<size_t>(sess.status.load())),
-  //         std::move(msg_rate_str), std::move(delay_s),
-  //         std::format("{:5.2f}%", delay_pct * 100)});
+  auto res = table.update_col(
+      1,
+      {Core::SessionStatusStrs.at(static_cast<size_t>(sess.status.load())),
+       std::move(msg_rate_str), std::move(delay_s),
+       // If delay_pct is NaN, self-comparison is false
+       (delay_pct == delay_pct) ? std::format("{:5.2f}%", delay_pct) : "live"});
 
   if (res.has_value())
     TRY_DROP(table.apply(p));
