@@ -47,6 +47,11 @@ draw_row(bool const drawing_border, Table::Column const &col,
 
   x += drawing_border;
 
+  // Draw spaces before cell text
+  if (x > 0)
+    plane.putstr(row_offset, drawing_border,
+                 std::string(x - drawing_border, ' ').c_str());
+
   return row_s.apply_to_plane(&plane, row_offset, x,
                               col.max_width + drawing_border);
 }
