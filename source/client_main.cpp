@@ -35,6 +35,7 @@
 #include "core/workers.hpp"
 
 #include "core/input.hpp"
+#include "time.hpp"
 
 int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
   App::AppContext::Log().set_level(spdlog::level::info);
@@ -222,6 +223,12 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
         }
       });
 
+  // There's gotta be a better solution
+  parser.add_element<Flag>("pause")
+      .set_help_msg(
+          "Whether to pause for 5 seconds to allow time to attach GDB.")
+      .set_long_opt("pause")
+      .set_default_state(false);
 #endif
 
   parser.finalize();
@@ -242,6 +249,12 @@ int main([[maybe_unused]] const int argc, [[maybe_unused]] const char *argv[]) {
     std::println("{}", parser.get_help());
     return EXIT_SUCCESS;
   }
+
+#ifndef NDEBUG
+  if (parser.get<Flag, bool>("pause")) {
+    std::this_thread::sleep_for(Time::Duration::UIntSec(5));
+  }
+#endif
 
   App::AppContext::Log().set_level(
       parser.get<Option, spdlog::level::level_enum>("log level"));
