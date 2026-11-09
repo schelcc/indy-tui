@@ -205,9 +205,16 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
       }
     }
   }
-  // p->erase();
+
   TRY_DROP(t->table.apply(p));
-  return always_render(std::move(t), focused, p);
+
+  if (_prev_focus != focused)
+    Tools::Draw::border_with_title(
+        p, "Leaderboard", focused ? UI::Color::CYAN_SOFT : UI::Color::NONE);
+
+  _prev_focus = focused;
+
+  return {};
 }
 
 // Lighter render
@@ -222,42 +229,6 @@ LeaderboardView::update_and_render(FocusState const focused,
     t->table.draw_cursor.clear();
 
   TRY_DROP(t->table.apply(p));
-
-  return always_render(std::move(t), focused, p);
-}
-
-// Steps to always render
-std::expected<void, UI::RenderErr> LeaderboardView::always_render(
-    [[maybe_unused]] ThreadSafe::LockPair<TableInfo> &&t,
-    FocusState const focused, ncpp::Plane *const p) noexcept {
-
-  // auto dim = *t->table.dim.get_const();
-
-  // {
-  //   auto h_rows = highlight_rows.get_const();
-
-  //   for (auto const &[idx, color] : *h_rows) {
-  //     auto ncpp_color =
-  //         Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG, color);
-  //     p->stain((idx % dim.rows) + 1, 1, 1, p->get_dim_x() - 1, ncpp_color,
-  //              ncpp_color, ncpp_color, ncpp_color);
-  //   }
-  // }
-
-  // {
-  //   auto res = t->table.batch_key_lookup(t->user_flagged_drivers);
-  //   if (!res.has_value()) {
-  //     return UI::RenderErr(UI::RenderErr::Source::VIEW,
-  //                          UI::RenderErr::TABLE_ERR,
-  //                          "Failed to batch-lookup user-flagged drivers");
-  //   }
-
-  //   auto color = Tools::Draw::mask_pal_channels(p, Tools::Draw::Target::BG,
-  //                                               UI::Color::BLUE_SOFT);
-  //   for (size_t idx : std::move(res.value()))
-  //     p->stain(idx + 1, 1, 1, p->get_dim_x() - 1, color, color, color,
-  //     color);
-  // }
 
   if (_prev_focus != focused)
     Tools::Draw::border_with_title(

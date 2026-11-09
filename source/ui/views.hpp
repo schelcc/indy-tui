@@ -167,11 +167,6 @@ private:
   std::atomic_bool _update_starred = false;
 
   void reconstruct_table(ThreadSafe::LockPair<TableInfo> &&) noexcept;
-
-  // Logic the same across both renders
-  std::expected<void, UI::RenderErr>
-  always_render(ThreadSafe::LockPair<TableInfo> &&, FocusState const,
-                ncpp::Plane *const) noexcept;
 };
 
 using view_variant =
