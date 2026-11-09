@@ -118,7 +118,10 @@ void Table::rebuild_columns() noexcept {
   size_t const width_adj = drawing_border + column_sep.load();
 
   size_t const y_off = 1 + padding_top;
-  size_t const ylen = _plane->get_dim_y() - y_off - 1;
+
+  // Ensure ylen is exactly the length the table needs, and no more
+  size_t const ylen = separator_rows.get_const()->size() +
+                      dim.get_const()->rows + (drawing_border * 2);
 
   size_t x_off = 1 + padding_left;
 
