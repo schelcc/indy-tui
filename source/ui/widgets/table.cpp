@@ -206,11 +206,11 @@ Table::redraw_cursor(size_t const cursor_index,
 }
 
 /* Table public methods */
-void Table::move_cursor(UI::CursorDirection const d) noexcept {
+size_t Table::move_cursor(UI::CursorDirection const d) noexcept {
   if (!draw_cursor.test()) {
     App::AppContext::Log().warn(
         "Tried to move cursor on plane with cursor drawing disabled");
-    return;
+    return 0;
   }
 
   auto skip_rows = cursor_skip_rows.get_const();
@@ -240,6 +240,8 @@ void Table::move_cursor(UI::CursorDirection const d) noexcept {
   }
 
   App::AppContext::Log().trace("Cursor position is now: {}", cursor_target);
+
+  return cursor;
 }
 
 std::string Table::cursor_backing_key() const noexcept {
@@ -459,12 +461,16 @@ std::expected<void, UI::RenderErr> Table::apply(ncpp::Plane *const p) noexcept {
   }
 
   // Draw cursor
-  const size_t cursor_index = _cursor_pos.load();
+  size_t cursor_index = _cursor_pos.load();
   const bool cursor_moved = cursor_index != _last_cursor_pos;
 
   // Only draw/redraw cursor if it has moved, or if some number of
   // columns were redrawn earlier
   if (drawing_cursor && (cursor_moved || !to_redraw_cursor.empty())) {
+    // Handle for cursor starting on a skip row
+    if (cursor_skip_rows.get_const()->contains(cursor_index))
+      cursor_index = move_cursor(CursorDirection::NEXT);
+
     auto &redraw_indices = cursor_moved ? _col_range : to_redraw_cursor;
     TRY_DROP(redraw_cursor(cursor_index, redraw_indices, cursor_moved,
                            drawing_border, std::move(sep_rows)));

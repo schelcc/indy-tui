@@ -255,8 +255,8 @@ public:
 
   /** @brief Move the table's cursor one row in the given direction,
    * skipping any rows indicated by `cursor_skip_rows`. Does nothing
-   * if `draw_cursor` is not set. */
-  void move_cursor(UI::CursorDirection const) noexcept;
+   * if `draw_cursor` is not set. Returns new cursor position. */
+  size_t move_cursor(UI::CursorDirection const) noexcept;
 
   /** @brief Get the backing key under the table's cursor. Requires both backing
    * keys and cursor to be enabled. Returns empty string if either is disabled.
