@@ -249,6 +249,23 @@ public:
     return this->append(std::forward<S>(other));
   }
 
+  template <typename S>
+    requires(std::is_same_v<std::wstring, std::remove_cvref_t<S>>)
+  String &operator+=(S &&s) noexcept {
+    str += std::forward<S>(s);
+    return *this;
+  }
+
+  template <size_t N> String &operator+=(const wchar_t (&s)[N]) {
+    str += s;
+    return *this;
+  }
+
+  String &operator+=(std::string const &s) noexcept {
+    str += str_to_wstr(s);
+    return *this;
+  }
+
   [[nodiscard]] bool operator==(String const &s) const noexcept {
     // Size is the most likely to fail so allow that to bail first
     return (str == s.str) && (fmts == s.fmts);

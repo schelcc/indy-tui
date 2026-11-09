@@ -85,15 +85,16 @@ struct RenderErr {
     NOP = 3,
     TABLE_MISMATCH = 4,
     TABLE_ERR = 5,
-    STRING_OVERFLOW = 6
+    STRING_OVERFLOW = 6,
+    INVARIANT = 7,
   };
 
   enum Source : size_t { WIDGET = 0, VIEW = 1, LAYOUT = 2, STRING = 3 };
 
   // Todo : Once reflection is well supported use it here
-  static constexpr std::array<std::string_view, 7> REASON_STRS = {
+  static constexpr std::array<std::string_view, 8> REASON_STRS = {
       "NullPlane",     "PlaneOverflow", "PlaneUnderflow", "NoOp",
-      "TableMismatch", "TableErr",      "StringOverflow"};
+      "TableMismatch", "TableErr",      "StringOverflow", "Invariant"};
 
   static constexpr std::array<std::string_view, 4> SOURCE_STRS = {
       "Widget", "View", "Layout", "String"};
