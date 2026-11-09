@@ -110,23 +110,30 @@ void InterfaceWorker::operator()(std::stop_token stop_tok) {
                      : v.update_and_render(focused, p);
         });
 
-    leaderboard_view->as<UI::Views::LeaderboardView>().set_columns(
-        {{Columns::Rank, "Rank"},
-         {Columns::PitStatus<SessionType::PRACTICE>,
-          " ",
-          UI::Align::RIGHT,
-          {true, false}},
-         {Columns::DriverName<SessionType::PRACTICE>,
-          "Name",
-          UI::Align::LEFT,
-          {false, true}},
-         {Columns::Interval, "Interval"},
-         {Columns::Gap, "Gap"},
-         {Columns::Throttle, "Throttle %"},
-         {Columns::Brake, "Brake %"},
-         {Columns::LapsSincePit, "Since Pit"},
-         {Columns::Speed, "Speed"},
-         {Columns::LapDist, "Lap Distance"}});
+    using ColumnInfo = UI::Views::LeaderboardView::ColumnInfo;
+    std::vector<ColumnInfo> cols{};
+
+    using namespace Columns;
+    // clang-format off
+    leaderboard_view->as<UI::Views::LeaderboardView>().set_columns({
+        ColumnInfo(Rank, "Pos.")
+	    .set_align(UI::Align::RIGHT),
+	ColumnInfo(PitStatus<SessionType::PRACTICE>, "Pit Status")
+	    .set_align(UI::Align::RIGHT)
+	    .disable_name_draw(),
+	ColumnInfo(DriverName<SessionType::PRACTICE>, "Name")
+	    .disable_left_border(),
+	ColumnInfo(EmptyColumn, "Starred")
+	    .disable_left_border()
+	    .disable_name_draw(),
+	ColumnInfo(Interval, "Interval"),
+	ColumnInfo(Gap, "Gap"),
+	ColumnInfo(Throttle, "Throttle"),
+	ColumnInfo(Brake, "Brake"),
+	ColumnInfo(LapsSincePit, "Since Pit"),
+	ColumnInfo(Speed, "Speed"),
+	ColumnInfo(LapDist, "Lap Distance")});
+    // clang-format on
   }
 
   // Build main layout

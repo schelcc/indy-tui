@@ -78,23 +78,39 @@ struct LeaderboardView {
 
   struct ColumnInfo {
     ColumnFunc func;
-    UI::String name;
-    UI::Align align;
-    BorderCfg border_cfg;
+    UI::String name = "";
+    UI::Align align = UI::Align::LEFT;
+    bool draw_name = true;
+    bool draw_left_border = true;
 
     template <typename F>
       requires(std::is_invocable_v<F, Telemetry::DriverTelemetry const &> &&
                Core::IsOneOf<
                    std::invoke_result_t<F, Telemetry::DriverTelemetry const &>,
                    UI::String, std::string, std::wstring>)
-    ColumnInfo(F &&f, UI::String &&s, UI::Align const a = UI::Align::LEFT,
-               BorderCfg const b_cfg = {true, true})
+    ColumnInfo(F &&f, std::string &&s,
+               UI::Align const a = UI::Align::LEFT) noexcept
         : func([f = std::forward<F>(f)](Telemetry::DriverTelemetry const &d)
                    -> UI::String { return std::invoke(f, d); }),
-          name(s), align(a), border_cfg(b_cfg) {}
+          name(std::move(s)), align(a) {}
 
-    // TODO - After profile move this to multistr to support returning regular
-    // string and wstring
+    ColumnInfo &&set_align(UI::Align const a) noexcept {
+      align = a;
+      return std::move(*this);
+    }
+
+    ColumnInfo &&disable_left_border() noexcept {
+      draw_left_border = false;
+      return std::move(*this);
+    }
+
+    ColumnInfo &&disable_name_draw() noexcept {
+      draw_name = false;
+      return std::move(*this);
+    }
+
+    // TODO - After profile move this to multistr to support returning
+    // regular string and wstring
     UI::String operator()(Telemetry::DriverTelemetry const &d) const {
       return std::invoke(func, d);
     }

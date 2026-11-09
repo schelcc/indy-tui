@@ -483,16 +483,17 @@ void Table::redraw_border() noexcept {
   for (auto [col, plane] : std::ranges::zip_view{_table, _col_planes}) {
     auto border_mask = ncpp::NCBox::CornerMask;
 
-    border_mask |= (!col.props.border_cfg.left * ncpp::NCBox::MaskLeft);
+    border_mask |= (!col.props.draw_left_border * ncpp::NCBox::MaskLeft);
 
-    plane.putwch(
-        0, 0, col.props.border_cfg.left ? BOXDRAW_SET::T_D : BOXDRAW_SET::HORI);
+    plane.putwch(0, 0,
+                 col.props.draw_left_border ? BOXDRAW_SET::T_D
+                                            : BOXDRAW_SET::HORI);
     plane.putwch(plane.get_dim_y() - 1, 0,
-                 col.props.border_cfg.left ? BOXDRAW_SET::T_U
-                                           : BOXDRAW_SET::HORI);
+                 col.props.draw_left_border ? BOXDRAW_SET::T_U
+                                            : BOXDRAW_SET::HORI);
 
     // If not drawing a left-border, draw a space char there
-    if (!col.props.border_cfg.left) {
+    if (!col.props.draw_left_border) {
       ncpp::Cell c(' ');
       plane.cursor_move(1, 0);
       plane.vline(c, plane.get_dim_y() - 2);

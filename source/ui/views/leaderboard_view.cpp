@@ -123,7 +123,7 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
     for (auto &c : t->cols) {
       auto props = t->table.column_props(idx++);
       props->align = c.align;
-      props->border_cfg = c.border_cfg;
+      props->draw_left_border = c.draw_left_border;
     }
 
     dim = *t->table.dim.get_const();
@@ -160,13 +160,22 @@ std::expected<void, UI::RenderErr> LeaderboardView::update_and_render(
 
       size_t col_idx = 0;
 
-      for (auto const &col : t->cols) {
+      for (auto &col : t->cols) {
+        _swap_col.at(0) = col.draw_name ? col.name : " ";
+
+        if (col.name == "Starred" && _update_starred.exchange(false))
+          col.func = [stars = t->user_flagged_drivers](
+                         Telemetry::DriverTelemetry const &d) -> UI::String {
+            return stars.contains(d._car_num) ? L"★" : L" ";
+          };
+
         std::transform(std::begin(*drivers), std::end(*drivers),
-                       std::begin(_swap_col), col);
+                       std::begin(_swap_col) + 1, col);
         res = t->table.swp_update_col(col_idx++, _swap_col);
       }
 
       App::PerfContext::StopLeaderboardPopulationTime();
+    }
 
       // Reorder backing keys
       auto backing_reorder_res = t->table.set_backing_keys(

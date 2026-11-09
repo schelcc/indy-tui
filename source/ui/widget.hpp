@@ -125,7 +125,7 @@ public:
 
     struct Props {
       Align align = Align::LEFT;
-      BorderCfg border_cfg = {true, true};
+      bool draw_left_border = true;
     } props{};
 
     /** @brief Recalculate this column's max_width. Returns bool indicating
